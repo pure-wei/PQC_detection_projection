@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PQC-HTTPS — 抗量子密码检测平台</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #c9d1d9; --dim: #8b949e; --accent: #f78166;
+    --green: #7ee787; --red: #ff7b72; --yellow: #e3b341; --blue: #79c0ff;
+    --purple: #bc8cff;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 16px 28px; display: flex; align-items: center; gap: 16px;
+  }
+  header .logo {
+    font-size: 20px; font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--purple));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  header .sub { font-size: 13px; color: var(--dim); }
+
+  /* ── Layout ── */
+  .layout { display: flex; min-height: calc(100vh - 57px); }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 300px; min-width: 300px; background: var(--surface);
+    border-right: 1px solid var(--border); padding: 24px 20px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .sidebar label { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; }
+  .sidebar input {
+    width: 100%; padding: 10px 12px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; font-size: 14px;
+    font-family: 'Cascadia Code', 'Consolas', monospace; outline: none;
+  }
+  .sidebar input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(247,129,102,.2); }
+
+  .btn {
+    padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; font-weight: 600; cursor: pointer; background: var(--bg);
+    color: var(--text); text-align: left; transition: all .2s;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .btn:hover { border-color: var(--accent); background: #1a1a2e; }
+  .btn .num {
+    width: 28px; height: 28px; border-radius: 6px; display: flex;
+    align-items: center; justify-content: center; font-size: 13px;
+    font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .btn-pcap  .num { background: var(--purple); }
+  .btn-detect .num { background: #1a8a5a; }
+  .btn-cert  .num { background: #1a6bb0; }
+  .btn-scan  .num { background: linear-gradient(135deg, var(--accent), var(--purple)); }
+  .btn .desc { font-size: 11px; color: var(--dim); font-weight: 400; }
+
+  .hint { font-size: 12px; color: var(--dim); line-height: 1.6; }
+  .hint span { color: var(--accent); }
+
+  /* ── Content ── */
+  .content { flex:1; padding: 24px 28px; overflow-y: auto; }
+  .placeholder {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; color: var(--dim); gap: 12px;
+  }
+  .placeholder .icon { font-size: 48px; opacity: .3; }
+
+  .result { display: none; }
+  .result.active { display: block; }
+
+  /* ── Output formatting ── */
+  .section { margin-bottom: 20px; }
+  .section-title {
+    font-size: 13px; font-weight: 600; color: var(--blue);
+    border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 10px;
+  }
+  pre.output {
+    background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+    font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-x: auto;
+    color: var(--text); margin: 0;
+  }
+  .output .ok { color: var(--green); }
+  .output .warn { color: var(--yellow); }
+  .output .fail { color: var(--red); }
+  .output .dim { color: var(--dim); }
+  .output .blue { color: var(--blue); }
+
+  /* ── Info grid ── */
+  .info-grid { display: grid; grid-template-columns: 140px 1fr; gap: 4px 16px; font-size: 13px; }
+  .info-grid .k { color: var(--dim); }
+  .info-grid .v { color: var(--text); }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600;
+  }
+  .badge-ok { background: rgba(126,231,135,.15); color: var(--green); }
+  .badge-no { background: rgba(255,123,114,.15); color: var(--red); }
+  .badge-warn { background: rgba(227,179,65,.15); color: var(--yellow); }
+  .badge-pqc { background: rgba(188,140,255,.15); color: var(--purple); }
+
+  /* ── Table ── */
+  .tbl { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+  .tbl th { text-align: left; color: var(--blue); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  .tbl td { padding: 5px 10px; border-bottom: 1px solid #1a1f2b; }
+  .tbl tr:hover { background: rgba(255,255,255,.02); }
+
+  /* ── Spinner ── */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 18px; height: 18px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite;
+    display: inline-block; vertical-align: middle; margin-right: 8px;
+  }
+  .loading-text { color: var(--yellow); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">PQC-HTTPS</span>
+  <span class="sub">抗量子密码 HTTPS 检测与证书分析平台</span>
+</header>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div>
+      <label>目标域名</label>
+      <input type="text" id="host" placeholder="cloudflare.com" value="cloudflare.com"
+             onkeydown="if(event.key==='Enter')run('scan')">
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button class="btn btn-scan" onclick="run('scan')">
+        <span class="num">★</span>
+统一安全扫描
+        <span class="desc">抓包 → 解析算法 → 抗量子判定</span>
+      </button>
+      <button class="btn btn-pcap" onclick="run('pcap')">
+        <span class="num">1</span>
+深度抓包
+      </button>
+      <button class="btn btn-detect" onclick="run('detect')">
+        <span class="num">2</span>
+PQC 检测
+      </button>
+      <button class="btn btn-cert" onclick="run('cert')">
+        <span class="num">3</span>
+证书分析
+      </button>
+    </div>
+
+  </div>
+
+  <!-- Content -->
+  <div class="content" id="content">
+    <div class="placeholder" id="placeholder">
+      <div class="icon">&#x1f50d;</div>
+      <div>输入域名后点击左侧按钮开始分析</div>
+      <div style="font-size:12px;color:var(--dim)">分析结果将显示在此处</div>
+    </div>
+    <div class="result" id="result"></div>
+  </div>
+
+</div>
+
+<script>
+const COLORS = { PASS:'ok', WARN:'warn', FAIL:'fail', SKIP:'dim' };
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function badge(s, cls){ return `<span class="badge badge-${cls}">${s}</span>`; }
+function statusColor(s){ return `<span class="${COLORS[s]||'dim'}">${s}</span>`; }
+
+async function run(cmd){
+  const host = $('host').value.trim();
+  if(!host){ alert('请输入域名'); return; }
+
+  const btns = document.querySelectorAll('.btn');
+  btns.forEach(b => b.disabled = true);
+  $('placeholder').style.display = 'none';
+  $('result').innerHTML = '<div style="padding:40px;text-align:center"><span class="spinner"></span> <span class="loading-text">正在连接并分析...</span></div>';
+  $('result').classList.add('active');
+
+  try {
+    const resp = await fetch(`/api/${cmd}?host=${encodeURIComponent(host)}`);
+    const d = await resp.json();
+
+    if(!d.ok){
+      $('result').innerHTML = `<div style="padding:40px;text-align:center;color:var(--red);font-size:15px">${esc(d.error)}</div>`;
+    } else {
+      $('result').innerHTML = render(cmd, d);
+    }
+  } catch(e){
+    $('result').innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">网络错误: ${esc(e.message)}</div>`;
+  }
+  btns.forEach(b => b.disabled = false);
+}
+
+function render(cmd, d){
+  let h = renderHead(cmd, d);
+  h += renderCipher(d);
+  if(cmd==='pcap') h += renderRecords(d);
+  if(cmd==='detect') h += renderDetectDetail(d);
+  if(cmd==='cert') h += renderCertDetail(d);
+  if(cmd==='scan') h += renderScanDetail(d);
+  h += renderVerification(d);
+  return h;
+}
+
+function renderHead(cmd, d){
+  const titles = {scan:'统一安全扫描', pcap:'深度抓包', detect:'PQC 握手检测', cert:'证书深度分析'};
+  const host = esc(d.host)+':'+esc(d.port);
+  return `<div style="font-size:18px;font-weight:700;margin-bottom:4px">${titles[cmd]}</div>
+          <div style="font-size:13px;color:var(--dim);margin-bottom:16px">${host} &nbsp;|&nbsp; ${esc(d.protocol||'')} &nbsp;|&nbsp; ${esc(d.cipher_suite||'')}</div>`;
+}
+
+function renderCipher(d){
+  if(!d.cipher_decomposed) return '';
+  const cs = d.cipher_decomposed;
+  return `<div class="section">
+    <div class="section-title">密码套件组成</div>
+    <div class="info-grid">
+      <span class="k">密钥交换</span><span class="v">${esc(cs.kex)}</span>
+      <span class="k">身份认证</span><span class="v">${esc(cs.auth)}</span>
+      <span class="k">对称加密</span><span class="v">${esc(cs.enc)}</span>
+      <span class="k">哈希算法</span><span class="v">${esc(cs.hash)}</span>
+    </div>
+  </div>`;
+}
+
+function renderRecords(d){
+  if(!d.records||!d.records.length) return '';
+  let r = `<div class="section"><div class="section-title">TLS 记录时序 (${d.record_count}条, 发送${d.total_sent}B / 接收${d.total_recv}B)</div>`;
+  r += '<table class="tbl"><tr><th>#</th><th></th><th>类型</th><th>大小</th><th>版本</th></tr>';
+  d.records.forEach((rec,i) => {
+    r += `<tr><td>${i+1}</td><td style="color:var(--dim)">${rec.dir}</td><td>${esc(rec.type)}</td><td>${rec.len}B</td><td>${esc(rec.ver)}</td></tr>`;
+  });
+  r += '</table></div>';
+  return r;
+}
+
+function renderDetectDetail(d){
+  let r = '<div class="section"><div class="section-title">检测结果</div>';
+  r += `<div class="info-grid">`;
+  r += `<span class="k">检测方式</span><span class="v">${esc(d.method||'')}</span>`;
+  r += `<span class="k">PQC 支持</span><span class="v">${d.pqc_supported ? badge('是 ✓','ok') : badge('否 ✗','no')}</span>`;
+  if(d.pqc_algorithm) r += `<span class="k">PQC 算法</span><span class="v">${badge(d.pqc_algorithm,'pqc')}</span>`;
+  if(d.pqc_group_id) r += `<span class="k">组 ID</span><span class="v">${esc(d.pqc_group_id)}</span>`;
+  r += `<span class="k">证据</span><span class="v">${esc(d.evidence||'-')}</span>`;
+  if(d.cdn_provider) r += `<span class="k">CDN</span><span class="v">${esc(d.cdn_provider)}</span>`;
+  r += `</div></div>`;
+  return r;
+}
+
+function renderCertDetail(d){
+  let r = '<div class="section"><div class="section-title">基本信息</div><div class="info-grid">';
+  r += `<span class="k">使用者 (CN)</span><span class="v">${esc(d.subject_cn)}</span>`;
+  r += `<span class="k">颁发者 (CN)</span><span class="v">${esc(d.issuer_cn)}</span>`;
+  if(d.issuer_org) r += `<span class="k">颁发机构</span><span class="v">${esc(d.issuer_org)}</span>`;
+  r += `<span class="k">有效期</span><span class="v">${esc(d.not_before)} ~ ${esc(d.not_after)}</span>`;
+  r += `<span class="k">指纹</span><span class="v" style="font-family:monospace">${esc(d.fingerprint)}</span>`;
+  r += `</div></div>`;
+
+  r += '<div class="section"><div class="section-title">签名算法</div><div class="info-grid">';
+  let sig = esc(d.sig_algorithm);
+  if(d.sig_is_sm) sig += ' [国密]';
+  if(d.sig_is_pqc) sig += ' [抗量子]';
+  r += `<span class="k">算法</span><span class="v">${sig}</span>`;
+  r += `<span class="k">OID</span><span class="v" style="font-family:monospace">${esc(d.sig_oid)}</span>`;
+  r += `</div></div>`;
+
+  r += '<div class="section"><div class="section-title">公钥信息</div><div class="info-grid">';
+  r += `<span class="k">类型</span><span class="v">${esc(d.pubkey_type)} &nbsp; ${d.pubkey_size_bits} bits</span>`;
+  if(d.pubkey_curve) r += `<span class="k">曲线</span><span class="v">${esc(d.pubkey_curve)}</span>`;
+  r += `</div></div>`;
+
+  r += '<div class="section"><div class="section-title">安全评估</div><div class="info-grid">';
+  r += `<span class="k">抗量子</span><span class="v">${d.is_quantum_safe ? badge('是','ok') : badge('否 (经典密码)','no')}</span>`;
+  if(d.nist_level>0) r += `<span class="k">NIST 级别</span><span class="v">Level ${d.nist_level}</span>`;
+  r += `</div></div>`;
+
+  return r;
+}
+
+function renderScanDetail(d){
+  let r = '<div class="section"><div class="section-title">传输层 · 密钥交换</div><div class="info-grid">';
+  if(d.kex_group_id){
+    r += `<span class="k">实际协商组</span><span class="v">${esc(d.kex_group_name)} <span style="font-family:monospace;color:var(--dim)">${esc(d.kex_group_id)}</span></span>`;
+  } else {
+    r += `<span class="k">密钥交换</span><span class="v">${esc(d.kex_group_name||'-')}</span>`;
+  }
+  r += `<span class="k">抗量子</span><span class="v">${d.transport_pqc ? badge('是 ✓','ok') : badge('否 ✗','no')}</span>`;
+  r += `<span class="k">证据</span><span class="v">${esc(d.transport_evidence||'-')}</span>`;
+  r += `</div></div>`;
+
+  r += '<div class="section"><div class="section-title">证书层 · 签名 / 公钥</div><div class="info-grid">';
+  r += `<span class="k">主体 (CN)</span><span class="v">${esc(d.cert_subject||'-')}</span>`;
+  r += `<span class="k">签名算法</span><span class="v">${esc(d.cert_sig_algorithm||'-')}${d.cert_sig_is_pqc?' [抗量子]':''}</span>`;
+  r += `<span class="k">公钥类型</span><span class="v">${esc(d.cert_pubkey_type||'-')}${d.cert_pubkey_is_pqc?' [抗量子]':''}</span>`;
+  r += `<span class="k">抗量子</span><span class="v">${d.cert_quantum_safe ? badge('是','ok') : badge('否 (经典)','no')}</span>`;
+  if(d.nist_checks && d.nist_checks.length){
+    d.nist_checks.forEach(c => { r += `<span class="k">NIST 校验</span><span class="v" style="color:var(--yellow)">${esc(c)}</span>`; });
+  }
+  r += `</div></div>`;
+
+  let cls = 'no';
+  if(d.overall){
+    if(d.overall.indexOf('完全')===0) cls='ok';
+    else if(d.overall.indexOf('部分')===0) cls='warn';
+  }
+  r += `<div class="section"><div class="section-title">综合结论</div>`;
+  r += `<span class="badge badge-${cls}" style="font-size:14px">${esc(d.overall||'-')}</span></div>`;
+  return r;
+}
+
+function renderVerification(d){
+  if(!d.verification) return '';
+  const v = d.verification;
+
+  let r = '<div class="section"><div class="section-title">抗伪造验证 &nbsp;'+
+    badge(v.overall, v.overall==='PASS'?'ok':v.overall==='WARN'?'warn':'no') +
+    `</div>`;
+
+  // Unified verification table — only rows that have real data
+  r += '<table class="tbl"><tr><th style="width:130px">检查项</th><th style="width:130px">子项</th><th style="width:80px">状态</th><th>详情</th></tr>';
+
+  // Randomness (pcap only)
+  const rnd = (v.randomness||[]).filter(x => x.status !== 'SKIP');
+  rnd.forEach(rd => {
+    r += `<tr><td>随机数质量</td><td>${esc(rd.label)}</td><td>${statusColor(rd.status)}</td>`;
+    r += `<td style="color:var(--dim)">熵 ${rd.entropy.toFixed(1)} bits/byte &nbsp; χ²=${rd.chi_squared.toFixed(0)}</td></tr>`;
+  });
+
+  // Cert sig (detect + cert)
+  if(v.cert_sig){
+    const cs = v.cert_sig;
+    const sigV = cs.signature_valid;
+    const sigLabel = sigV===true?'有效':sigV===false?'无效':'未验证';
+    const sigColor = sigV===true?'PASS':sigV===false?'FAIL':'SKIP';
+    r += `<tr><td rowspan="3">证书签名</td>`;
+    r += `<td>${esc(cs.declared_name||'-')}</td><td>-</td>`;
+    r += `<td style="color:var(--dim)">OID ${esc(cs.declared_oid||'-')}</td></tr>`;
+    r += `<tr><td>密码学验证</td><td>${statusColor(sigColor)+' '+sigLabel}</td>`;
+    r += `<td style="color:var(--dim)">用上级CA公钥逐级验证证书链签名</td></tr>`;
+    r += `<tr><td>详情</td><td>${statusColor(cs.status)}</td>`;
+    r += `<td style="color:var(--dim)">${esc(cs.details)}</td></tr>`;
+  }
+
+  // Key share (pcap + detect)
+  if(v.key_share && v.key_share.status !== 'SKIP'){
+    const ks = v.key_share;
+    r += `<tr><td rowspan="2">密钥交换</td>`;
+    r += `<td>${esc(ks.declared_name||'-')}</td><td>-</td>`;
+    r += `<td style="color:var(--dim)">组 ID ${esc(ks.declared_group_id||'-')}`;
+    if(ks.expected_size>0) r += ` &nbsp; 期望 ${ks.expected_size}B / 实际 ${ks.actual_size}B`;
+    r += `</td></tr>`;
+    r += `<tr><td>大小验证</td><td>${statusColor(ks.status)}</td>`;
+    r += `<td style="color:var(--dim)">${esc(ks.details)}</td></tr>`;
+  }
+
+  r += '</table></div>';
+  return r;
+}
+
+// Enter key to run pcap
+$('host').focus();
+</script>
+</body>
+</html>

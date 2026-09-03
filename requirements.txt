@@ -1,0 +1,20 @@
+# ── PQC-HTTPS 检测平台依赖 ──
+# TLS 连接核心用标准库 ssl + socket 即可;以下为各功能模块的实际依赖。
+
+# 证书解析 / 签名验证 / 公钥类型识别
+cryptography>=48.0.0
+
+# PDF 报告生成 (src/utils/pdf_report.py)
+fpdf2>=2.7.0
+
+# Web 界面 (src/web/app.py)
+flask>=3.0.0
+
+# 批量扫描 DataFrame 汇总 (src/tls_analysis/capture.py)
+pandas>=2.0.0
+
+# 配置加载 (src/utils/config.py)
+pyyaml>=6.0
+
+# 汇报稿 Word 生成 (tools/gen_report.py, 可选)
+python-docx>=1.1.0

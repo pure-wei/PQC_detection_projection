@@ -1,0 +1,5 @@
+[project]
+name = "pqc-https-detector"
+version = "2.0.0"
+description = "Post-Quantum Cryptography HTTPS Detection — scan websites for encryption algorithms and PQC support"
+requires-python = ">=3.10"

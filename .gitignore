@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# 检测结果输出（运行 detect/scan 生成，不入库）
+output/
+
+# IDE
+.idea/
