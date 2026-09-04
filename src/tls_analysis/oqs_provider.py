@@ -90,30 +90,54 @@ _EXTRA_SEARCH_PATHS = [
 ]
 
 
-def find_openssl() -> str:
-    """Locate the openssl binary."""
-    openssl = shutil.which("openssl")
-    if openssl:
-        return openssl
-    for p in ["D:/Git/mingw64/bin/openssl.exe",
-              "C:/msys64/mingw64/bin/openssl.exe"]:
-        if os.path.exists(p):
-            return p
-    return "openssl"
+# Search order for the openssl binary. PATH usually holds a 3.0.x build
+# (Git Bash / conda ship 3.0.18) that has no ML-KEM, silently degrading
+# Layer 1 detection to CDN inference — so probe every candidate and prefer
+# a PQC-capable one (OpenSSL 3.5+ has ML-KEM built in).
+_OPENSSL_BINARIES = [
+    "D:/Git/mingw64/bin/openssl.exe",
+    "C:/msys64/mingw64/bin/openssl.exe",
+]
 
 
-def check_oqs_available() -> bool:
-    """Check if PQC TLS groups are available (built-in or via OQS provider)."""
-    openssl = find_openssl()
+def _supports_pqc(openssl: str) -> bool:
+    """True if this openssl binary exposes ML-KEM (built-in or via provider)."""
     try:
-        # Check for built-in PQC groups in OpenSSL 3.5+
         result = subprocess.run(
             [openssl, "list", "-kem-algorithms"],
             capture_output=True, text=True, timeout=10,
         )
         combined = (result.stdout + result.stderr).lower()
-        if "mlkem" in combined or "x25519mlkem" in combined:
-            return True
+        return "mlkem" in combined
+    except Exception:
+        return False
+
+
+def find_openssl() -> str:
+    """Locate the openssl binary, preferring a PQC-capable build.
+
+    Returns the first candidate whose -kem-algorithms list contains ML-KEM;
+    if none qualifies, falls back to the first available (Layer 2 behavior).
+    """
+    candidates = []
+    which = shutil.which("openssl")
+    if which:
+        candidates.append(which)
+    candidates.extend(p for p in _OPENSSL_BINARIES if os.path.exists(p))
+    if not candidates:
+        return "openssl"
+    for openssl in candidates:
+        if _supports_pqc(openssl):
+            return openssl
+    return candidates[0]
+
+
+def check_oqs_available() -> bool:
+    """Check if PQC TLS groups are available (built-in or via OQS provider)."""
+    openssl = find_openssl()
+    if _supports_pqc(openssl):
+        return True
+    try:
         # Fallback: check for OQS provider
         result = subprocess.run(
             [openssl, "list", "-providers", "-provider", "oqsprovider"],
