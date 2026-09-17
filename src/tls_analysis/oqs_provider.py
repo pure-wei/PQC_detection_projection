@@ -1,15 +1,13 @@
-"""OQS (Open Quantum Safe) Provider detection for OpenSSL.
+"""OQS / OpenSSL PQC 能力检测 + TLS group ID 对照表。
 
-Checks whether the OQS provider (oqsprovider) is installed and available
-in the system's OpenSSL, enabling direct PQC TLS handshake testing.
+职责：
+1. 定位本机 openssl，优先选择支持 ML-KEM 的构建（检测分岔口的依据）；
+2. 维护 PQC / 经典密钥交换组 ID 对照表，用于解读 ServerHello key_share；
+3. 输出 OQS 安装指引与状态汇总。
 
-Installation:
-  1. Build liboqs:    https://github.com/open-quantum-safe/liboqs
-  2. Build oqsprovider: https://github.com/open-quantum-safe/oqs-provider
-  3. Configure openssl.cnf to activate both default + oqsprovider
-
-Or via MSYS2 on Windows:
-  pacman -S mingw-w64-x86_64-liboqs mingw-w64-x86_64-oqs-provider
+安装 OQS provider（OpenSSL 3.5+ 已内置 ML-KEM，无需此步）：
+  MSYS2:  pacman -S mingw-w64-x86_64-liboqs mingw-w64-x86_64-oqs-provider
+  源码:   https://github.com/open-quantum-safe/liboqs + oqs-provider
 """
 
 import os
@@ -21,9 +19,89 @@ from ..utils.logger import get_logger
 
 log = get_logger(__name__)
 
-# ── PQC TLS Group IDs (IANA / IETF draft) ──
-# These are the TLS supported_groups identifiers for PQC key exchange.
-# Ref: draft-ietf-tls-hybrid-design / draft-kwiatkowski-tls-ecdhe-mlkem
+# PATH 里常见的 3.0.x 构建（Git Bash / conda 的 3.0.18）没有 ML-KEM，
+# 会让 Layer 1 检测静默退化成 CDN 推断，因此额外维护候选列表择优。
+_OPENSSL_BINARIES = [
+    "D:/Git/mingw64/bin/openssl.exe",
+    "C:/msys64/mingw64/bin/openssl.exe",
+]
+
+# Windows 下 oqsprovider.dll 的磁盘搜索路径（仅 detect_oqs_status 用）
+_MINGW64_SSL_MODULES = [
+    "D:/Git/mingw64/lib/ossl-modules",
+    "C:/msys64/mingw64/lib/ossl-modules",
+]
+
+_EXTRA_SEARCH_PATHS = [
+    "C:/Program Files/OpenSSL/lib/ossl-modules",
+    "C:/OpenSSL/lib/ossl-modules",
+]
+
+
+def _supports_pqc(openssl: str) -> bool:
+    """openssl 能否列出 ML-KEM（内置或 provider 加载均算）。"""
+    try:
+        result = subprocess.run(
+            [openssl, "list", "-kem-algorithms"],
+            capture_output=True, text=True, timeout=10,
+        )
+        combined = (result.stdout + result.stderr).lower()
+        return "mlkem" in combined
+    except Exception:
+        return False
+
+
+def find_openssl() -> str:
+    """定位 openssl，优先返回 PQC-capable 的构建。
+
+    逐个探测 PATH 与已知安装路径里的候选，返回第一个支持 ML-KEM 的；
+    都不支持时回退第一个候选（保持 Layer 2 可用），没有候选则返回
+    "openssl" 交给 subprocess 报错。
+    """
+    candidates = []
+    which = shutil.which("openssl")
+    if which:
+        candidates.append(which)
+    candidates.extend(p for p in _OPENSSL_BINARIES if os.path.exists(p))
+    if not candidates:
+        return "openssl"
+    for openssl in candidates:
+        if _supports_pqc(openssl):
+            return openssl
+    return candidates[0]
+
+
+def check_oqs_available() -> bool:
+    """系统是否可用于 PQC TLS 测试（内置 ML-KEM 或 OQS provider）。"""
+    openssl = find_openssl()
+    if _supports_pqc(openssl):
+        return True
+    try:
+        # 慢路径：显式加载 oqsprovider，按错误文案区分未安装/已加载
+        result = subprocess.run(
+            [openssl, "list", "-providers", "-provider", "oqsprovider"],
+            capture_output=True, text=True, timeout=10,
+        )
+        combined = (result.stdout + result.stderr).lower()
+        if "unable to load provider oqsprovider" in combined:
+            return False
+        if "could not load the shared library" in combined:
+            return False
+        return "oqsprovider" in combined
+    except Exception:
+        return False
+
+
+def get_oqs_group_flag() -> str:
+    """s_client 的 -groups 参数：首选 X25519MLKEM768，附经典回退组。"""
+    return "X25519MLKEM768:x25519:secp256r1"
+
+
+# ── TLS group ID 对照表（IANA / IETF 草案） ────────────────────────────────
+# TLS 1.3 的 cipher suite 名不编码密钥交换算法，实际协商的算法只记录在
+# ServerHello key_share 的数字组 ID 里，靠下面两张表还原。
+# 参考：draft-ietf-tls-hybrid-design / draft-kwiatkowski-tls-ecdhe-mlkem
+
 PQC_GROUP_IDS = {
     0x11EB: "X25519MLKEM512",
     0x11EC: "X25519MLKEM768",
@@ -40,10 +118,6 @@ PQC_GROUP_IDS = {
     0x2F3C: "FrodoKEM-1344-AES",
 }
 
-# ── Classical TLS group IDs (IANA registry) ──
-# Used to resolve the ACTUAL negotiated key_share group from a ServerHello,
-# instead of inferring "ECDHE" from the cipher suite name (which, in TLS 1.3,
-# does NOT encode the key exchange algorithm at all).
 CLASSICAL_GROUP_IDS = {
     0x001D: "X25519",
     0x001E: "X448",
@@ -58,112 +132,16 @@ CLASSICAL_GROUP_IDS = {
 
 
 def lookup_group(group_id: int) -> tuple[str, bool]:
-    """Resolve a TLS group ID to (group_name, is_pqc).
-
-    This is the single source of truth for "what key exchange algorithm was
-    actually negotiated" — it maps the numeric group ID from a ServerHello
-    key_share extension back to a human-readable name, and flags whether the
-    group is post-quantum (PQC) or classical.
-
-    Args:
-        group_id: 16-bit TLS supported_groups / key_share group ID.
-
-    Returns:
-        (name, is_pqc) — name is a human-readable algorithm name, is_pqc is
-        True if the group is a post-quantum (or hybrid PQC) key exchange.
-    """
+    """组 ID → (算法名, 是否抗量子)。两张表都未命中时按经典处理。"""
     if group_id in PQC_GROUP_IDS:
         return PQC_GROUP_IDS[group_id], True
     if group_id in CLASSICAL_GROUP_IDS:
         return CLASSICAL_GROUP_IDS[group_id], False
     return f"Unknown(0x{group_id:04X})", False
 
-# Build the -groups flag from the known PQC group IDs
-_MINGW64_SSL_MODULES = [
-    "D:/Git/mingw64/lib/ossl-modules",
-    "C:/msys64/mingw64/lib/ossl-modules",
-]
-
-_EXTRA_SEARCH_PATHS = [
-    "C:/Program Files/OpenSSL/lib/ossl-modules",
-    "C:/OpenSSL/lib/ossl-modules",
-]
-
-
-# Search order for the openssl binary. PATH usually holds a 3.0.x build
-# (Git Bash / conda ship 3.0.18) that has no ML-KEM, silently degrading
-# Layer 1 detection to CDN inference — so probe every candidate and prefer
-# a PQC-capable one (OpenSSL 3.5+ has ML-KEM built in).
-_OPENSSL_BINARIES = [
-    "D:/Git/mingw64/bin/openssl.exe",
-    "C:/msys64/mingw64/bin/openssl.exe",
-]
-
-
-def _supports_pqc(openssl: str) -> bool:
-    """True if this openssl binary exposes ML-KEM (built-in or via provider)."""
-    try:
-        result = subprocess.run(
-            [openssl, "list", "-kem-algorithms"],
-            capture_output=True, text=True, timeout=10,
-        )
-        combined = (result.stdout + result.stderr).lower()
-        return "mlkem" in combined
-    except Exception:
-        return False
-
-
-def find_openssl() -> str:
-    """Locate the openssl binary, preferring a PQC-capable build.
-
-    Returns the first candidate whose -kem-algorithms list contains ML-KEM;
-    if none qualifies, falls back to the first available (Layer 2 behavior).
-    """
-    candidates = []
-    which = shutil.which("openssl")
-    if which:
-        candidates.append(which)
-    candidates.extend(p for p in _OPENSSL_BINARIES if os.path.exists(p))
-    if not candidates:
-        return "openssl"
-    for openssl in candidates:
-        if _supports_pqc(openssl):
-            return openssl
-    return candidates[0]
-
-
-def check_oqs_available() -> bool:
-    """Check if PQC TLS groups are available (built-in or via OQS provider)."""
-    openssl = find_openssl()
-    if _supports_pqc(openssl):
-        return True
-    try:
-        # Fallback: check for OQS provider
-        result = subprocess.run(
-            [openssl, "list", "-providers", "-provider", "oqsprovider"],
-            capture_output=True, text=True, timeout=10,
-        )
-        combined = (result.stdout + result.stderr).lower()
-        if "unable to load provider oqsprovider" in combined:
-            return False
-        if "could not load the shared library" in combined:
-            return False
-        return "oqsprovider" in combined
-    except Exception:
-        return False
-
-
-def get_oqs_group_flag() -> str:
-    """Return the -groups flag string for PQC testing.
-
-    Uses the standard hybrid group X25519MLKEM768 plus classical fallbacks.
-    OpenSSL 3.5+ has built-in PQC support with these group names.
-    """
-    return "X25519MLKEM768:x25519:secp256r1"
-
 
 def get_install_instructions() -> str:
-    """Return platform-specific OQS installation instructions."""
+    """按平台返回 OQS provider 安装指引。"""
     if sys.platform == "win32":
         return (
             "OQS Provider not found.\n\n"
@@ -187,15 +165,10 @@ def get_install_instructions() -> str:
 
 
 def detect_oqs_status() -> dict:
-    """Full OQS detection: availability, paths, version.
-
-    Returns:
-        dict with status details
-    """
+    """OQS 状态汇总：可用性、openssl 路径/版本、oqsprovider.dll 是否落盘。"""
     openssl_path = find_openssl()
     available = check_oqs_available()
 
-    # Check for DLL on disk (Windows)
     dll_found = False
     dll_paths = []
     for d in _MINGW64_SSL_MODULES + _EXTRA_SEARCH_PATHS:
@@ -204,7 +177,6 @@ def detect_oqs_status() -> dict:
             dll_found = True
             dll_paths.append(dll)
 
-    # Get OpenSSL version
     version = "unknown"
     try:
         result = subprocess.run(
@@ -226,7 +198,7 @@ def detect_oqs_status() -> dict:
 
 
 def print_oqs_status():
-    """Print OQS detection status to console."""
+    """把 OQS 状态格式化打印到控制台。"""
     status = detect_oqs_status()
     log.info("=" * 60)
     log.info("OQS Provider Detection")

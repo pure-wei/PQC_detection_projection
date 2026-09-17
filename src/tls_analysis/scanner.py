@@ -1,21 +1,6 @@
-"""Unified host scanner: capture → parse algorithms → quantum-safety verdict.
+"""统一扫描：抓包 → 解析算法 → 抗量子综合判定（一次调用完成）。
 
-This module ties the three analysis layers together into one call, which is
-exactly the workflow the platform is built for:
-
-    抓包 (capture) → 解析密码算法 (parse which algorithm) → 判断是否抗量子 (verdict)
-
-For a single host it:
-  1. Captures the TLS handshake and parses the *actual* negotiated key-exchange
-     group from the ServerHello key_share extension (not inferred from the
-     cipher-suite name, which in TLS 1.3 does not encode the key exchange).
-  2. Decomposes the cipher suite into key-exchange / auth / symmetric / hash.
-  3. Parses the X.509 certificate (signature algorithm, public key type) and
-     runs the NIST data-driven size check.
-  4. Produces a single layered verdict combining the transport layer and the
-     certificate layer.
-
-Usage:
+用法:
     from .scanner import scan_host
     r = scan_host("cloudflare.com")
     print(r.overall)
@@ -38,32 +23,32 @@ log = get_logger(__name__)
 
 @dataclass
 class ScanResult:
-    """Complete layered analysis of one host."""
+    """单个主机的分层分析结果。"""
 
     host: str
     port: int = 443
     success: bool = False
     error: str = ""
 
-    # ── Negotiated session ──
+    # ── 协商会话 ──
     protocol: str = ""
     cipher_suite_name: str = ""
 
-    # ── Cipher suite decomposition (from the name) ──
-    kex_algorithm: str = ""       # e.g. "ECDHE" (name-derived, may be generic)
+    # ── 套件名分解 ──
+    kex_algorithm: str = ""       # 如 "ECDHE"（来自套件名，仅参考）
     auth_algorithm: str = ""
     symmetric_algorithm: str = ""
     hash_algorithm: str = ""
 
-    # ── Transport layer: the ACTUAL negotiated key-exchange group ──
-    kex_group_id: str = ""        # hex, e.g. "0x11EC"
-    kex_group_name: str = ""      # e.g. "X25519MLKEM768" / "X25519"
+    # ── 传输层：实际协商的密钥交换组 ──
+    kex_group_id: str = ""        # 如 "0x11EC"
+    kex_group_name: str = ""      # 如 "X25519MLKEM768" / "X25519"
     kex_is_pqc: bool = False
     transport_pqc: bool = False
     transport_evidence: str = ""
     detect_method: str = ""       # "oqs_direct" / "cdn_inference" / "none"
 
-    # ── Certificate layer ──
+    # ── 证书层 ──
     cert_error: str = ""
     cert_subject: str = ""
     cert_issuer: str = ""
@@ -75,12 +60,12 @@ class ScanResult:
     cert_nist_level: int = 0
     nist_checks: list = field(default_factory=list)
 
-    # ── Combined verdict ──
-    overall: str = ""             # human-readable quantum-safety verdict
+    # ── 综合结论 ──
+    overall: str = ""
 
 
 def _get_leaf_cert(host: str, port: int, timeout: float = 10.0) -> bytes:
-    """Get the leaf certificate DER bytes from a TLS connection."""
+    """TLS 连接拿到叶子证书的 DER 字节。"""
     context = ssl.create_default_context()
     context.check_hostname = True
     with socket.create_connection((host, port), timeout=timeout) as sock:
@@ -89,19 +74,14 @@ def _get_leaf_cert(host: str, port: int, timeout: float = 10.0) -> bytes:
 
 
 def scan_host(host: str, port: int = 443, timeout: float = 15.0) -> ScanResult:
-    """Run a full layered analysis of one host.
+    """对单个主机执行传输层 + 证书层分析并给出综合结论。
 
-    Args:
-        host: Target hostname.
-        port: Target port.
-        timeout: Per-connection timeout in seconds.
-
-    Returns:
-        ScanResult with transport + certificate analysis and a combined verdict.
+    传输层分岔：OQS/ML-KEM 可用时走 Layer 1 直接实测（解析
+    ServerHello key_share），否则降级 Layer 2 CDN 推测。
     """
     result = ScanResult(host=host, port=port)
 
-    # ── Layer: transport / key exchange ──
+    # ── 传输层（密钥交换）──
     oqs_available = check_oqs_available()
 
     if oqs_available:
@@ -118,7 +98,7 @@ def scan_host(host: str, port: int = 443, timeout: float = 15.0) -> ScanResult:
             result.transport_evidence = det.evidence
             result.detect_method = det.method
 
-            # Resolve the ACTUAL negotiated group (PQC or classical).
+            # 把实际协商的组 ID 还原成可读名称（PQC 与经典组都还原）
             if det.pqc_group_id:
                 try:
                     gid = int(det.pqc_group_id, 16)
@@ -133,7 +113,6 @@ def scan_host(host: str, port: int = 443, timeout: float = 15.0) -> ScanResult:
         else:
             result.error = det.error
     else:
-        # No OQS: fall back to Python ssl + CDN inference (no group available).
         info = analyze_tls_connection(host, port, timeout)
         if info.success:
             cs = info.cipher_suite or parse_cipher_suite_name(info.cipher_suite_name)
@@ -151,7 +130,7 @@ def scan_host(host: str, port: int = 443, timeout: float = 15.0) -> ScanResult:
         else:
             result.error = info.error
 
-    # ── Layer: certificate ──
+    # ── 证书层（签名/公钥）──
     if result.protocol:
         try:
             der = _get_leaf_cert(host, port, timeout)
@@ -174,7 +153,7 @@ def scan_host(host: str, port: int = 443, timeout: float = 15.0) -> ScanResult:
 
 
 def _verdict(r: ScanResult) -> str:
-    """Combine transport + certificate layers into a single verdict."""
+    """传输层 × 证书层 → 四象限综合结论。"""
     if not r.success:
         return "未知 (连接失败)"
 
@@ -191,7 +170,7 @@ def _verdict(r: ScanResult) -> str:
 
 
 def scan_to_dict(r: ScanResult) -> dict:
-    """Convert ScanResult to a JSON-serializable dict."""
+    """转成 JSON 可序列化的 dict。"""
     return {
         "host": r.host,
         "port": r.port,
@@ -226,7 +205,7 @@ def scan_to_dict(r: ScanResult) -> dict:
 
 
 def format_scan(r: ScanResult) -> str:
-    """Render a ScanResult as a readable CLI report."""
+    """渲染 ScanResult 为可读的 CLI 报告。"""
     def yesno(b: bool) -> str:
         return "是 (抗量子)" if b else "否 (经典)"
 
@@ -244,7 +223,7 @@ def format_scan(r: ScanResult) -> str:
         f"    哈希算法:    {r.hash_algorithm}",
     ]
 
-    # Transport layer — actual negotiated group
+    # 传输层——实际协商组
     lines.append("  ── 传输层 (密钥交换) ──")
     if r.kex_group_id:
         lines.append(f"    实际协商组:  {r.kex_group_name} (ID {r.kex_group_id})")
@@ -254,7 +233,7 @@ def format_scan(r: ScanResult) -> str:
     if r.transport_evidence:
         lines.append(f"    证据:        {r.transport_evidence[:80]}")
 
-    # Certificate layer
+    # 证书层
     lines.append("  ── 证书层 (签名/公钥) ──")
     if r.cert_error:
         lines.append(f"    证书解析失败: {r.cert_error}")
