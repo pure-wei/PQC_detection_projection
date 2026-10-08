@@ -1,0 +1,73 @@
+{
+  "status": "passed",
+  "generated_at": "2026-10-07T21:14:14+08:00",
+  "target": "127.0.0.1:8443",
+  "profile": {
+    "protocol": "udp",
+    "group": "X25519MLKEM768",
+    "signature": "SLH-DSA-SHA2-256f",
+    "classical_signature": ""
+  },
+  "checks": [
+    {
+      "id": "message_exchange",
+      "label": "真实 UDP 消息往返与内容核对",
+      "passed": true,
+      "detail": "UTF-8 54 字节；响应分片 58"
+    },
+    {
+      "id": "message_signature",
+      "label": "使用本地固定公钥验证实际消息签名",
+      "passed": true,
+      "detail": "SLH-DSA-SHA2-256f"
+    },
+    {
+      "id": "reject_changed_message",
+      "label": "负向对照：篡改消息被拒绝",
+      "passed": true,
+      "detail": "保留原签名，修改消息"
+    },
+    {
+      "id": "reject_changed_signature",
+      "label": "负向对照：篡改签名被拒绝",
+      "passed": true,
+      "detail": "保持签名长度，改变签名字节"
+    },
+    {
+      "id": "reject_wrong_key",
+      "label": "负向对照：错误固定公钥被拒绝",
+      "passed": true,
+      "detail": "不接受响应自行声明的新公钥"
+    },
+    {
+      "id": "reject_replay",
+      "label": "负向对照：旧签名不能用于新挑战",
+      "passed": true,
+      "detail": "每轮请求绑定 32 字节随机挑战"
+    },
+    {
+      "id": "reject_wrong_protocol",
+      "label": "负向对照：跨协议使用签名被拒绝",
+      "passed": true,
+      "detail": "签名绑定 TCP/UDP 实验协议标识"
+    }
+  ],
+  "summary": {
+    "protocol": "UDP",
+    "group_name": "无密钥交换（明文消息）",
+    "signature_algorithm": "SLH-DSA-SHA2-256f",
+    "classical_signature_algorithm": "",
+    "certificate_algorithm": "SLH-DSA-SHA2-256f",
+    "message_signature_verified": true,
+    "pq_signature_verified": true,
+    "classical_signature_verified": false,
+    "transport_confidentiality": false,
+    "response_fragments": 58,
+    "signature_bytes": 49856,
+    "public_key_bytes": 64,
+    "signing_key_fingerprint_sha256": "AE0B654E2B34E920153E45FC18547FB4DD398A921C0F43A8034158D6924B1AF4",
+    "message": "多协议后量子实验：实际消息与数字签名"
+  },
+  "openssl_version": "应用签名后端 pqcrypto 0.3.0",
+  "trust_scope": "Local pinned signing public key; plaintext application protocol; no TLS CA trust."
+}

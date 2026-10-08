@@ -1,0 +1,95 @@
+{
+  "status": "passed",
+  "generated_at": "2026-10-07T21:14:12+08:00",
+  "target": "127.0.0.1:8443",
+  "checks": [
+    {
+      "id": "hybrid_exchange",
+      "label": "真实混合密钥交换及长度校验",
+      "passed": true,
+      "detail": "SecP256r1MLKEM768（混合）"
+    },
+    {
+      "id": "finished",
+      "label": "服务器 Finished 密码学校验",
+      "passed": true,
+      "detail": "TLS transcript HMAC"
+    },
+    {
+      "id": "certificate_verify",
+      "label": "ML-DSA-44 CertificateVerify 验签",
+      "passed": true,
+      "detail": "{\"scheme\": \"0x0904\", \"scheme_name\": \"mldsa44\", \"sig_len\": 2420, \"verified\": true, \"error\": \"\", \"error_kind\": \"\"}"
+    },
+    {
+      "id": "pqc_chain",
+      "label": "两张 ML-DSA-44 证书及规范长度",
+      "passed": true,
+      "detail": "Inspect detector-report.json for per-certificate measurements"
+    },
+    {
+      "id": "detector",
+      "label": "原项目双层检测通过",
+      "passed": true,
+      "detail": "双层抗量子算法与服务器握手已验证；所提供证书链均为抗量子算法（CA 信任未验证）"
+    },
+    {
+      "id": "trusted_chain",
+      "label": "指定实验 CA：证书链、有效期、主机名及根自签名验证",
+      "passed": true,
+      "detail": "/home/wei/code/password/crypto-analysis-tool/pqc_lab/public/server.mldsa44.cert.pem: OK"
+    },
+    {
+      "id": "tls_session",
+      "label": "完成受信任的真实 TLS 1.3 会话",
+      "passed": true,
+      "detail": "OpenSSL exit=0; no HTTP request"
+    },
+    {
+      "id": "same_identity",
+      "label": "检测器、完整 TLS 会话与本地证书指纹一致",
+      "passed": true,
+      "detail": "757AF6A9A86F411B3CAEB82B2C3B14D177A0280ACA685DF68B3B6D37BE53C61E"
+    },
+    {
+      "id": "reject_classical",
+      "label": "负向对照：仅经典 X25519 被服务器拒绝",
+      "passed": true,
+      "detail": " certificate CA names sent\nNegotiated TLS1.3 group: <NULL>\n---\nSSL handshake has read 7 bytes and written 195 bytes\nVerification: OK\n---\nNew, (NONE), Cipher is (NONE)\nProtocol: TLSv1.3\nThis TLS version forbids renegotiation.\nCompression: NONE\nExpansion: NONE\nNo ALPN negotiated\nEarly data was not sent\nVerify return code: 0 (ok)\n---\nConnecting to 127.0.0.1\n40D7E71AE6780000:error:0A000410:SSL routines:ssl3_read_bytes:ssl/tls alert handshake failure:ssl/record/rec_layer_s3.c:918:SSL alert number 40\n40D7E71AE6780000:error:0A000197:SSL routines:SSL_shutdown:shutdown while in init:ssl/ssl_lib.c:2804:"
+    },
+    {
+      "id": "reject_wrong_hostname",
+      "label": "负向对照：错误主机名被拒绝",
+      "passed": true,
+      "detail": "CN=localhost\nerror 62 at 0 depth lookup: hostname mismatch\nerror /home/wei/code/password/crypto-analysis-tool/pqc_lab/public/server.mldsa44.cert.pem: verification failed"
+    },
+    {
+      "id": "reject_tampered_cert",
+      "label": "负向对照：长度/OID 不变但篡改签名的证书被拒绝",
+      "passed": true,
+      "detail": "CN=localhost\nerror 7 at 0 depth lookup: certificate signature failure\nerror /home/wei/code/password/crypto-analysis-tool/pqc_lab/.runtime/tampered.cert.pem: verification failed\n4007BA54637A0000:error:030000EA:digital envelope routines:EVP_DigestVerify:provider signature failure:crypto/evp/m_sigver.c:785:ML-DSA-44 digest_verify:\n4007BA54637A0000:error:06880006:asn1 encoding routines:ASN1_item_verify_ctx:EVP lib:crypto/asn1/a_verify.c:219:"
+    }
+  ],
+  "summary": {
+    "group_name": "SecP256r1MLKEM768（混合）",
+    "protocol": "TLS 1.3",
+    "cipher_suite": "TLS_AES_256_GCM_SHA384",
+    "certificate_algorithm": "ML-DSA-44",
+    "certificate_fingerprint_sha256": "757AF6A9A86F411B3CAEB82B2C3B14D177A0280ACA685DF68B3B6D37BE53C61E",
+    "certificate_public_key_bytes": 1312,
+    "certificate_signature_bytes": 2420,
+    "finished_verified": true,
+    "certificate_verify_verified": true,
+    "chain_certificates": 2,
+    "root_certificate_file": "root.mldsa44.cert.pem",
+    "server_certificate_file": "server.mldsa44.cert.pem"
+  },
+  "profile": {
+    "protocol": "tls",
+    "group": "SecP256r1MLKEM768",
+    "signature": "ML-DSA-44",
+    "classical_signature": ""
+  },
+  "trust_scope": "Explicit local laboratory CA only; not public Web PKI.",
+  "openssl_version": "OpenSSL 3.6.5 29 Sep 2026 (Library: OpenSSL 3.6.5 29 Sep 2026)"
+}

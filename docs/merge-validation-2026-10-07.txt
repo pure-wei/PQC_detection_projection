@@ -1,0 +1,43 @@
+2026-10-07 个人工作合并验证记录
+目标：/home/wei/code/password/crypto-analysis-tool
+来源：crypto-analysis-tool-main/crypto-analysis-tool-main
+环境：Linux，Python 3.10.19，OpenSSL 3.0.18
+
+合并前运行记录：
+目标：QT_QPA_PLATFORM=offscreen python -m pytest tests -q
+180 passed
+来源：QT_QPA_PLATFORM=offscreen python -m pytest tests -q
+57 passed, 3 failed, 1 skipped, 9 errors
+
+最终命令与实际结果：
+
+$ QT_QPA_PLATFORM=offscreen python -m pytest -q -rs
+246 passed, 11 skipped in 19.57s
+跳过全部来自 tests/test_pqc_lab.py 和 tests/test_pqc_lab_concurrency.py。
+共同原因：No OpenSSL with X25519MLKEM768 and mldsa65 found; use --openssl PATH (3.5+).
+
+$ QT_QPA_PLATFORM=offscreen python tests/test_all_features.py --offline
+合计 22 项：通过 17，失败 0，跳过 5
+跳过：深度外网检测、快速外网检测、外网结果导出、两个缺少 ML-DSA 证书的场景。
+
+$ QT_QPA_PLATFORM=offscreen python tests/test_edge_cases.py --offline
+合计 12 项：通过 11，失败 0
+另有 1 项明确 SKIP：非法超时输入的外网检测回退场景。
+
+$ python -m compileall -q main.py modules pqc_lab tests
+退出码 0，无错误输出。
+
+$ python pqc_lab/lab.py --help
+退出码 0；列出 init/serve/verify/stop/status 和 openssl/base/port/http-port 参数。
+
+$ python pqc_lab/lab.py status
+No managed service is recorded.
+退出码 0。
+
+独立只读复核：修复 IKE 长度、IKEv1 Notify、自定义 TLS 端口、加密 IKEv1 概要、二进制 IP 身份后，相关测试 45 passed，无剩余阻断问题。
+
+文件核对：48 个备份文件 SHA-256 均匹配原始清单；原文件无缺失；仅 .gitignore、README.md、项目说明文档.md、main.py、modules/pqc_detect.py、modules/pcap_analysis.py、modules/packet_parser.py、modules/handshake_view.py 发生修改。
+
+限制：未运行真实 PQC 实验服务、未生成或导入信任根、未执行 Windows 批处理或信任管理、未验证浏览器兼容性。页面 JS 测试使用合成报告，仅作为 UI 回归依据。
+
+后续补测：code 环境 / OpenSSL 3.6.5，257 passed in 25.23s，无跳过；原始输出：pqc-code-pytest-2026-10-07.txt。

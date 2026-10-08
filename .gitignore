@@ -2,13 +2,37 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-dist/
-build/
 .venv/
 venv/
 
-# 检测结果输出（运行 detect/scan 生成，不入库）
-output/
+# 打包产物
+build/
+dist/
+*.spec
 
-# IDE
+# 测试数据（真实抓包，不进仓库）
+测试文件/
+*.pcap
+*.pcapng
+
+# 抗量子检测的详细报文日志（每次检测自动落盘）
+pqc_logs/
+
+# 系统 / 编辑器
+.DS_Store
+Thumbs.db
 .idea/
+.vscode/
+
+# Local PQC lab: generated identities and measured evidence
+pqc_lab/.runtime/
+pqc_lab/public/*.pem
+pqc_lab/public/*.json
+pqc_lab/public/*.txt
+.pytest_cache/
+.pytest_pqc_lab*/
+.pqc-audit-pytest-*/
+.review-tls-*/
+
+# Reproducible synthetic IPsec capture
+!samples/ipsec_demo.pcap

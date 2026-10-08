@@ -1,0 +1,94 @@
+[
+  {
+    "protocol": "tls",
+    "signature": "ML-DSA-44",
+    "group": "SecP256r1MLKEM768",
+    "classical": "",
+    "time": "2026-10-07T21:14:12+08:00",
+    "checks": 11,
+    "summary": {
+      "group_name": "SecP256r1MLKEM768（混合）",
+      "protocol": "TLS 1.3",
+      "cipher_suite": "TLS_AES_256_GCM_SHA384",
+      "certificate_algorithm": "ML-DSA-44",
+      "certificate_fingerprint_sha256": "757AF6A9A86F411B3CAEB82B2C3B14D177A0280ACA685DF68B3B6D37BE53C61E",
+      "certificate_public_key_bytes": 1312,
+      "certificate_signature_bytes": 2420,
+      "finished_verified": true,
+      "certificate_verify_verified": true,
+      "chain_certificates": 2,
+      "root_certificate_file": "root.mldsa44.cert.pem",
+      "server_certificate_file": "server.mldsa44.cert.pem"
+    }
+  },
+  {
+    "protocol": "tcp",
+    "signature": "Falcon-512",
+    "group": "X25519MLKEM768",
+    "classical": "ECDSA-P256",
+    "time": "2026-10-07T21:14:13+08:00",
+    "checks": 9,
+    "summary": {
+      "protocol": "TCP",
+      "group_name": "无密钥交换（明文消息）",
+      "signature_algorithm": "Falcon-512",
+      "classical_signature_algorithm": "ECDSA-P256",
+      "certificate_algorithm": "Falcon-512",
+      "message_signature_verified": true,
+      "pq_signature_verified": true,
+      "classical_signature_verified": true,
+      "transport_confidentiality": false,
+      "response_fragments": 1,
+      "signature_bytes": 654,
+      "public_key_bytes": 897,
+      "signing_key_fingerprint_sha256": "1B0A4CBA5F11BF4357E19E86D390384F74A4B134CD52811541E6B493F47239B1",
+      "message": "多协议后量子实验：实际消息与数字签名"
+    }
+  },
+  {
+    "protocol": "udp",
+    "signature": "SLH-DSA-SHA2-256f",
+    "group": "X25519MLKEM768",
+    "classical": "",
+    "time": "2026-10-07T21:14:14+08:00",
+    "checks": 7,
+    "summary": {
+      "protocol": "UDP",
+      "group_name": "无密钥交换（明文消息）",
+      "signature_algorithm": "SLH-DSA-SHA2-256f",
+      "classical_signature_algorithm": "",
+      "certificate_algorithm": "SLH-DSA-SHA2-256f",
+      "message_signature_verified": true,
+      "pq_signature_verified": true,
+      "classical_signature_verified": false,
+      "transport_confidentiality": false,
+      "response_fragments": 58,
+      "signature_bytes": 49856,
+      "public_key_bytes": 64,
+      "signing_key_fingerprint_sha256": "AE0B654E2B34E920153E45FC18547FB4DD398A921C0F43A8034158D6924B1AF4",
+      "message": "多协议后量子实验：实际消息与数字签名"
+    }
+  },
+  {
+    "protocol": "https",
+    "signature": "ML-DSA-65",
+    "group": "X25519MLKEM768",
+    "classical": "",
+    "time": "2026-10-07T21:14:15+08:00",
+    "checks": 11,
+    "summary": {
+      "group_name": "X25519MLKEM768（混合）",
+      "protocol": "TLS 1.3",
+      "cipher_suite": "TLS_AES_256_GCM_SHA384",
+      "certificate_algorithm": "ML-DSA-65",
+      "certificate_fingerprint_sha256": "5464ACE3A7016A3861E1AECD0BE83E114B5A94E2FB1F0F74960F8869BDF55560",
+      "certificate_public_key_bytes": 1952,
+      "certificate_signature_bytes": 3309,
+      "finished_verified": true,
+      "certificate_verify_verified": true,
+      "chain_certificates": 2,
+      "root_certificate_file": "root.cert.pem",
+      "server_certificate_file": "server.cert.pem"
+    }
+  }
+]

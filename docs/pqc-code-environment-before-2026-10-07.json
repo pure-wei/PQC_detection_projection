@@ -1,0 +1,85 @@
+{
+  "prefix": "/home/wei/miniconda3/envs/code",
+  "packages": [
+    {
+      "base_url": "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge",
+      "build_number": 0,
+      "build_string": "hbd8a1cb_0",
+      "channel": "conda-forge",
+      "dist_name": "ca-certificates-2026.7.22-hbd8a1cb_0",
+      "name": "ca-certificates",
+      "platform": "noarch",
+      "version": "2026.7.22"
+    },
+    {
+      "base_url": "https://conda.anaconda.org/pypi",
+      "build_number": 0,
+      "build_string": "pypi_0",
+      "channel": "pypi",
+      "dist_name": "cryptography-48.0.0-pypi_0",
+      "name": "cryptography",
+      "platform": "pypi",
+      "version": "48.0.0"
+    },
+    {
+      "base_url": "https://conda.anaconda.org/pypi",
+      "build_number": 0,
+      "build_string": "pypi_0",
+      "channel": "pypi",
+      "dist_name": "gmssl-3.2.2-pypi_0",
+      "name": "gmssl",
+      "platform": "pypi",
+      "version": "3.2.2"
+    },
+    {
+      "base_url": "https://conda.anaconda.org/pypi",
+      "build_number": 0,
+      "build_string": "pypi_0",
+      "channel": "pypi",
+      "dist_name": "matplotlib-3.10.9-pypi_0",
+      "name": "matplotlib",
+      "platform": "pypi",
+      "version": "3.10.9"
+    },
+    {
+      "base_url": "https://conda.anaconda.org/pypi",
+      "build_number": 0,
+      "build_string": "pypi_0",
+      "channel": "pypi",
+      "dist_name": "numpy-2.2.6-pypi_0",
+      "name": "numpy",
+      "platform": "pypi",
+      "version": "2.2.6"
+    },
+    {
+      "base_url": "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge",
+      "build_number": 0,
+      "build_string": "h781a0a9_0",
+      "channel": "conda-forge",
+      "dist_name": "openssl-3.6.4-h781a0a9_0",
+      "name": "openssl",
+      "platform": "linux-64",
+      "version": "3.6.4"
+    },
+    {
+      "base_url": "https://conda.anaconda.org/pypi",
+      "build_number": 0,
+      "build_string": "pypi_0",
+      "channel": "pypi",
+      "dist_name": "pqcrypto-0.4.0-pypi_0",
+      "name": "pqcrypto",
+      "platform": "pypi",
+      "version": "0.4.0"
+    },
+    {
+      "base_url": "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge",
+      "build_number": 2,
+      "build_string": "h3c07f61_2_cpython",
+      "channel": "conda-forge",
+      "dist_name": "python-3.10.19-h3c07f61_2_cpython",
+      "name": "python",
+      "platform": "linux-64",
+      "version": "3.10.19"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-07",
+  "environment": "code",
+  "prefix": "/home/wei/miniconda3/envs/code",
+  "python": "3.10.19",
+  "python_ssl": "OpenSSL 3.6.5 29 Sep 2026",
+  "openssl_executable": "/home/wei/miniconda3/envs/code/bin/openssl",
+  "openssl_version": "OpenSSL 3.6.5 29 Sep 2026 (Library: OpenSSL 3.6.5 29 Sep 2026)",
+  "tls_groups": "secp256r1:secp384r1:secp521r1:x25519:x448:brainpoolP256r1tls13:brainpoolP384r1tls13:brainpoolP512r1tls13:ffdhe2048:ffdhe3072:ffdhe4096:ffdhe6144:ffdhe8192:MLKEM512:MLKEM768:MLKEM1024:SecP256r1MLKEM768:X25519MLKEM768:SecP384r1MLKEM1024",
+  "tls_signature_algorithms": "ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512:ed25519:ed448:ecdsa_sha224:ecdsa_sha1:ecdsa_brainpoolP256r1tls13_sha256:ecdsa_brainpoolP384r1tls13_sha384:ecdsa_brainpoolP512r1tls13_sha512:rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:rsa_pss_rsae_sha512:rsa_pss_pss_sha256:rsa_pss_pss_sha384:rsa_pss_pss_sha512:rsa_pkcs1_sha256:rsa_pkcs1_sha384:rsa_pkcs1_sha512:rsa_pkcs1_sha224:rsa_pkcs1_sha1:dsa_sha256:dsa_sha384:dsa_sha512:dsa_sha224:dsa_sha1:mldsa44:mldsa65:mldsa87",
+  "packages": {
+    "PySide6": "6.11.2",
+    "gmssl": "3.2.2",
+    "scapy": "2.8.0",
+    "cryptography": "48.0.0",
+    "pqcrypto": "0.3.0",
+    "matplotlib": "3.10.9",
+    "pytest": "9.1.1"
+  },
+  "pytest_command": "QT_QPA_PLATFORM=offscreen PQC_OPENSSL=/home/wei/miniconda3/envs/code/bin/openssl conda run -n code --no-capture-output python -m pytest -q -rs",
+  "pytest_result": "257 passed in 25.23s",
+  "skipped": 0,
+  "failed": 0
+}
