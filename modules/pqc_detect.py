@@ -24,6 +24,7 @@
 """
 
 from __future__ import annotations
+import base64
 
 import os
 import re
@@ -390,6 +391,7 @@ def _client_share_and_key(group_id: int):
     """
     n = CLIENT_SHARE_SIZES.get(group_id, 32)
     from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
     from cryptography.hazmat.primitives.asymmetric import ec, x25519
 
     def _x():
@@ -921,6 +923,34 @@ def _derive_shared(group_id: int, server_share: bytes, key_handle):
     raise ValueError("不支持的密钥交换组 0x%04X" % group_id)
 
 
+def _replay_private_material(key_handle):
+    """Serialize a generated client private key for same-session replay."""
+    from cryptography.hazmat.primitives import serialization
+    if key_handle[0] == "mlkem":
+        return base64.b64encode(key_handle[1]).decode("ascii")
+    if key_handle[0] == "x25519":
+        raw = key_handle[1].private_bytes(serialization.Encoding.Raw,
+                                          serialization.PrivateFormat.Raw,
+                                          serialization.NoEncryption())
+        return base64.b64encode(raw).decode("ascii")
+    if key_handle[0] == "ec":
+        der = key_handle[1].private_bytes(serialization.Encoding.DER,
+                                          serialization.PrivateFormat.PKCS8,
+                                          serialization.NoEncryption())
+        return base64.b64encode(der).decode("ascii")
+    if key_handle[0] == "hybrid":
+        _, kem_secret, classical_kind, classical_key = key_handle
+        classical = _replay_private_material(
+            ("x25519", classical_key) if classical_kind == "x25519" else ("ec", classical_key))
+        classical_algorithm = ("X25519" if classical_kind == "x25519" else
+                               "P-256" if isinstance(classical_key.curve, ec.SECP256R1)
+                               else "P-384")
+        return {"ecdh_algorithm": classical_algorithm,
+                "kem_private_key": base64.b64encode(kem_secret).decode("ascii"),
+                "ecdh_private_key": classical}
+    raise RuntimeError("cannot serialize this client private key")
+
+
 def _cert_chain_from_certificate(body: bytes):
     """严格解析 TLS 1.3 Certificate 列表，保留同一次握手的全部证书。"""
     if not body:
@@ -1048,6 +1078,7 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
         "server_messages": [], "handshake_bytes_sent": 0, "handshake_bytes_recv": 0,
         "offered": ["%s (0x%04X)" % (lookup_group(g)[0], g) for g in groups],
         "client_hello": None, "server_hello": None,
+        "replay_bundle": {"session": {}, "certificates": [], "encrypted_records": []},
         "timings": {"connect_ms": 0.0, "server_hello_ms": 0.0, "verify_ms": 0.0},
     }
     t0 = time.perf_counter()
@@ -1162,6 +1193,20 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
         transcript = hello[5:] + sh_msg
         k = _tls13_handshake_keys(shared, sh["cipher_code"], transcript)
         res["shared_secret_len"] = len(shared)
+        algorithms = {0x001D: "X25519", 0x0017: "P-256", 0x0018: "P-384",
+                      0x0200: "ML-KEM-512", 0x0201: "ML-KEM-768",
+                      0x0202: "ML-KEM-1024", 0x11EB: "SecP256r1MLKEM768",
+                      0x11EC: "X25519MLKEM768", 0x11ED: "SecP384r1MLKEM1024",
+                      0x11EE: "X25519MLKEM1024"}
+        res["replay_bundle"].update({
+            "session": {"source": "deep-detection", "host": host, "port": port,
+                        "same_handshake": True, "protocol": "TLS 1.3",
+                        "cipher_suite": res["cipher_suite"]},
+            "key_exchange": {
+                "algorithm": algorithms.get(res["group_id"], res["group_name"]),
+                "server_public_key": base64.b64encode(server_share).decode("ascii"),
+                "private_key": _replay_private_material(key_handle),
+                "expected_shared_secret": base64.b64encode(shared).decode("ascii")}})
 
         seq, finished, cv_body, cert_der = 0, None, None, None
         transcript_after_cert = None
@@ -1187,6 +1232,16 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
             pt = _aead_decrypt(k["aead"], k["server_key"],
                                _nonce(k["server_iv"], seq), header, payload)
             seq += 1
+            record_algorithm = ("ChaCha20-Poly1305" if k["aead"] != "aes"
+                                else "AES-128-GCM" if len(k["server_key"]) == 16
+                                else "AES-256-GCM")
+            res["replay_bundle"]["encrypted_records"].append({
+                "algorithm": record_algorithm,
+                "key": base64.b64encode(k["server_key"]).decode("ascii"),
+                "nonce": base64.b64encode(_nonce(k["server_iv"], seq - 1)).decode("ascii"),
+                "aad": base64.b64encode(header).decode("ascii"),
+                "ciphertext": base64.b64encode(payload).decode("ascii"),
+                "expected_plaintext": base64.b64encode(pt).decode("ascii")})
             # TLSInnerPlaintext = content ‖ content_type(1) ‖ 零填充
             pt = pt.rstrip(b"\x00")
             if not pt:
@@ -1216,6 +1271,8 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
                     cert_der = chain[0]
                     res["cert_der"] = cert_der
                     res["cert_chain_der"] = chain
+                    res["replay_bundle"]["certificates"] = [
+                        base64.b64encode(item).decode("ascii") for item in chain]
                     transcript_after_cert = transcript
                 elif mt == 15:
                     cv_body = body
@@ -1265,6 +1322,10 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
                 "sig_len": len(sig), "verified": ok, "error": err,
                 "error_kind": error_kind,
             }
+            res["replay_bundle"]["handshake_signature"] = {
+                "scheme": "0x%04X" % scheme,
+                "signed_content": base64.b64encode(content).decode("ascii"),
+                "signature": base64.b64encode(sig).decode("ascii")}
             if not ok and res["verification_error_kind"] != "invalid":
                 res["verification_status"] = "unsupported" if error_kind == "unsupported" else "failed"
                 res["verification_error_kind"] = error_kind

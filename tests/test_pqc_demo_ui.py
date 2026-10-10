@@ -2,6 +2,9 @@
 
 import os
 import time
+import datetime
+import json
+import base64
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -11,6 +14,60 @@ from PySide6.QtWidgets import QApplication, QTabWidget, QSplitter
 
 from main import MainWindow
 from modules.pqc_demo_ui import PqcDemoTab, PqcCompareTab
+
+
+def _actual_replay_bundle():
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec, x25519
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.x509.oid import NameOID
+
+    signing_key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "replay-ui-test")])
+    certificate = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
+                   .public_key(signing_key.public_key())
+                   .serial_number(x509.random_serial_number())
+                   .not_valid_before(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1))
+                   .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1))
+                   .sign(signing_key, hashes.SHA256()))
+    content = b"actual handshake content"
+    signature = signing_key.sign(content, ec.ECDSA(hashes.SHA256()))
+    key = bytes(range(32))
+    nonce = bytes(range(12))
+    plaintext = b"actual record"
+    ciphertext = AESGCM(key).encrypt(nonce, plaintext, b"record-header")
+    client = x25519.X25519PrivateKey.generate()
+    peer = x25519.X25519PrivateKey.generate()
+    raw = serialization.Encoding.Raw
+    return {
+        "session": {"same_handshake": True},
+        "certificates": [certificate.public_bytes(serialization.Encoding.DER)],
+        "key_exchange": {
+            "algorithm": "X25519",
+            "server_public_key": peer.public_key().public_bytes(raw, serialization.PublicFormat.Raw),
+            "private_key": client.private_bytes(raw, serialization.PrivateFormat.Raw,
+                                                serialization.NoEncryption()),
+            "expected_shared_secret": client.exchange(peer.public_key()),
+        },
+        "handshake_signature": {"scheme": "0x0403", "signed_content": content,
+                                "signature": signature},
+        "encrypted_records": [{"algorithm": "AES-256-GCM", "key": key, "nonce": nonce,
+                               "aad": b"record-header", "ciphertext": ciphertext,
+                               "expected_plaintext": plaintext}],
+    }
+
+
+def _json_bundle(bundle):
+    def encode(value):
+        if isinstance(value, bytes):
+            return base64.b64encode(value).decode("ascii")
+        if isinstance(value, dict):
+            return {key: encode(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [encode(item) for item in value]
+        return value
+    return json.dumps(encode(bundle))
 
 
 def _wait_for(app, predicate, timeout=5):
@@ -211,72 +268,20 @@ def test_wsl_loads_a_font_with_chinese_glyphs():
     assert QFontMetrics(QFont(family)).inFontUcs4(ord("中"))
 
 
-def test_hybrid_signature_button_runs_both_signatures_and_tamper_checks():
+def test_replay_page_calculates_from_actual_session_material():
     app = QApplication.instance() or QApplication([])
     tab = PqcDemoTab()
     tab.pages.setCurrentIndex(3)
     tab.show()
     app.processEvents()
-    assert tab.message_box.isVisible()
-    tab.hybrid_signature_classical_combo.setCurrentText("RSA-PSS-2048")
-    tab.hybrid_signature_combo.setCurrentText("ML-DSA-44")
-    tab.message_edit.setPlainText("界面混合签名测试")
-    tab.btn_hybrid_sign.click()
-    assert not any(button.isEnabled() for button in (
-        tab.btn_kem, tab.btn_hybrid, tab.btn_sign, tab.btn_hybrid_sign))
-    _wait_for(app, lambda: tab.btn_hybrid_sign.isEnabled())
-
-    output = tab.hybrid_signature_output.toPlainText()
-    assert "RSA-PSS-2048 + ML-DSA-44" in output
-    assert "传统签名验签：通过" in output
-    assert "后量子签名验签：通过" in output
-    assert "混合验签（AND）：通过" in output
-    assert "改动消息：已拒绝" in output
-    assert "篡改传统签名：已拒绝" in output
-    assert "篡改后量子签名：已拒绝" in output
-    raw = tab.hybrid_signature_raw_output.toPlainText()
-    assert "传统签名（Base64）" in raw
-    assert "后量子签名（Base64）" in raw
-    assert "私钥" not in raw
-    assert not tab.hybrid_signature_raw_output.isVisible()
-    tab.hybrid_signature_raw_checkbox.setChecked(True)
-    app.processEvents()
-    assert tab.hybrid_signature_raw_output.isVisible()
-    tab.close()
-
-
-def test_hybrid_signature_overlong_input_clears_previous_artifacts():
-    app = QApplication.instance() or QApplication([])
-    tab = PqcDemoTab()
-    tab.btn_hybrid_sign.click()
-    _wait_for(app, lambda: tab.btn_hybrid_sign.isEnabled())
-    assert tab.hybrid_signature_raw_output.toPlainText()
-    tab.message_edit.setPlainText("量" * 1366)
-    tab.btn_hybrid_sign.click()
-    app.processEvents()
-
-    assert "4096 字节" in tab.hybrid_signature_output.toPlainText()
-    assert not tab.hybrid_signature_raw_output.toPlainText()
-    assert tab.btn_hybrid_sign.isEnabled()
-    tab.close()
-
-
-def test_hybrid_signature_failure_reenables_demo_buttons(monkeypatch):
-    from modules import pqc_demo
-
-    def fail(*args):
-        raise RuntimeError("缺少 pqcrypto")
-
-    monkeypatch.setattr(pqc_demo, "run_hybrid_signature_demo", fail)
-    app = QApplication.instance() or QApplication([])
-    tab = PqcDemoTab()
-    tab.btn_hybrid_sign.click()
-    _wait_for(app, lambda: tab.btn_hybrid_sign.isEnabled())
-
-    assert "缺少 pqcrypto" in tab.hybrid_signature_output.toPlainText()
-    assert "运行失败" in tab.hybrid_signature_status.text()
-    assert all(button.isEnabled() for button in (
-        tab.btn_kem, tab.btn_hybrid, tab.btn_sign, tab.btn_hybrid_sign))
+    tab.replay_bundle_edit.setPlainText(_json_bundle(_actual_replay_bundle()))
+    tab.btn_replay.click()
+    assert "Certificate 列表严格解析" in tab.replay_output.toPlainText()
+    assert "密钥封装 / 交换复算：共享秘密复算一致" in tab.replay_output.toPlainText()
+    assert "握手签名验签：用叶子证书 SPKI 公钥验签通过，服务器掌握对应私钥" in tab.replay_output.toPlainText()
+    assert "认证解密通过" in tab.replay_output.toPlainText()
+    assert "复算完成 · 同次连接" in tab.replay_status.text()
+    assert json.loads(tab.replay_result_json.toPlainText())["conclusion"] == "verified"
     tab.close()
 
 
@@ -290,54 +295,6 @@ def test_comparison_page_shows_common_classical_algorithms():
                    for col in range(tab.table.columnCount()))
     app.processEvents()
     tab.close()
-
-
-def test_main_window_defers_closing_until_hybrid_signature_worker_finishes():
-    app = QApplication.instance() or QApplication([])
-    window = MainWindow()
-    demo = window._pqc_demo_tab
-    demo.hybrid_signature_combo.setCurrentText("SLH-DSA-SHAKE-256s")
-    window.show()
-    demo.btn_hybrid_sign.click()
-    assert demo._worker.isRunning()
-    try:
-        assert window.close() is False
-        assert window.isVisible()
-        assert not demo.isEnabled()
-        _wait_for(app, lambda: not window.isVisible(), timeout=10)
-        assert demo._worker is None
-    finally:
-        # Even against the broken implementation, drain the worker before Qt
-        # destroys its owner so a failing assertion does not abort pytest.
-        _wait_for(app, lambda: demo._worker is None, timeout=10)
-        window.close()
-
-
-def test_window_closes_when_worker_finishes_before_close_callback_is_connected(monkeypatch):
-    app = QApplication.instance() or QApplication([])
-    window = MainWindow()
-    demo = window._pqc_demo_tab
-    demo.hybrid_signature_combo.setCurrentText("SLH-DSA-SHAKE-256s")
-    window.show()
-    set_enabled = window.setEnabled
-
-    def finish_during_close(enabled):
-        set_enabled(enabled)
-        if not enabled:
-            # Force the real worker to finish after the running check but
-            # before its finished signal gains the window-close connection.
-            assert demo._worker.wait(10000)
-
-    monkeypatch.setattr(window, "setEnabled", finish_during_close)
-    demo.btn_hybrid_sign.click()
-    try:
-        assert window.close() is False
-        _wait_for(app, lambda: demo._worker is None, timeout=10)
-        app.processEvents()
-        assert not window.isVisible()
-    finally:
-        _wait_for(app, lambda: demo._worker is None, timeout=10)
-        window.close()
 
 
 def test_kem_calculation_view_shows_parameters_randomness_and_all_coefficients():
@@ -428,34 +385,4 @@ def test_signature_details_use_family_parameters_and_real_calculations():
     tab.message_edit.setPlainText("量"*1366)
     tab.btn_sign.click()
     assert viewer.tree.topLevelItemCount() == 0
-    tab.close()
-
-
-def test_hybrid_signature_details_show_binding_and_and_checks_and_clear_on_failure(monkeypatch):
-    from modules import pqc_demo
-
-    app = QApplication.instance() or QApplication([])
-    tab = PqcDemoTab()
-    tab.hybrid_signature_classical_combo.setCurrentText("RSA-PSS-2048")
-    tab.hybrid_signature_combo.setCurrentText("ML-DSA-44")
-    tab.btn_hybrid_sign.click()
-    _wait_for(app, lambda: tab.btn_hybrid_sign.isEnabled())
-    viewer = tab.hybrid_signature_trace_view
-    assert "RSA-PSS-2048" in viewer.detail.toPlainText()
-    flags = Qt.MatchFlag.MatchContains | Qt.MatchFlag.MatchRecursive
-    binding = viewer.tree.findItems("绑定数据", flags)
-    assert binding
-    viewer.tree.setCurrentItem(binding[0])
-    assert "signed_data" in viewer.detail.toPlainText()
-    assert viewer.tree.findItems("PSS 掩码", flags)
-    assert viewer.tree.findItems("AND", flags)
-
-    def fail(*args):
-        raise RuntimeError("签名重放不一致")
-
-    monkeypatch.setattr(pqc_demo, "run_hybrid_signature_demo", fail)
-    tab.btn_hybrid_sign.click()
-    _wait_for(app, lambda: tab.btn_hybrid_sign.isEnabled())
-    assert viewer.tree.topLevelItemCount() == 0
-    assert "签名重放不一致" in tab.hybrid_signature_output.toPlainText()
     tab.close()

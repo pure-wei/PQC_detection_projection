@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Qt pages for the offline PQC algorithm demonstrations."""
 
+import json
 from html import escape
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -8,10 +9,13 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QPlainTextEdit, QPushButton, QSplitter, QTextEdit,
     QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QFileDialog,
 )
 
 from modules import pqc_demo
 from modules.mlkem_trace_ui import CalculationTraceView
+from modules import pqc_replay
+from modules.pqc_replay import ReplayInputError
 
 
 _CAPTURE_DEMO_GROUPS = {
@@ -43,9 +47,6 @@ class _DemoWorker(QThread):
             elif self.operation == "hybrid":
                 result = pqc_demo.run_hybrid_demo(
                     self.message, self.algorithm, self.classical_algorithm)
-            elif self.operation == "hybrid_sign":
-                result = pqc_demo.run_hybrid_signature_demo(
-                    self.message, self.algorithm, self.classical_algorithm)
             else:
                 result = pqc_demo.run_signature_demo(self.message, self.algorithm)
         except Exception as exc:
@@ -55,16 +56,18 @@ class _DemoWorker(QThread):
 
 
 class PqcDemoTab(QWidget):
-    """KEM, hybrid encryption, PQC signatures and hybrid signature demos."""
+    """Offline PQC demos and replay verification for one actual connection."""
 
-    def __init__(self, parent=None, *, capture_provider=None):
+    def __init__(self, parent=None, *, capture_provider=None, session_provider=None):
         super().__init__(parent)
         self._worker = None
         self._capture_provider = capture_provider
+        self._session_provider = session_provider
+        self._replay_sessions = []
         self._captured_brief = ""
         root = QVBoxLayout(self)
 
-        intro = QLabel("离线算法演示 · 每次使用临时密钥。‘参数与计算过程’展示本轮真实数值与临时秘密；原生库未返回的数据会注明。仅供教学，不自动保存。输入消息最多 4096 字节。")
+        intro = QLabel("①–③ 为离线算法演示；④ 使用前面同次深度检测或导入证据包中的实际材料复核，缺失秘密会明确列出，不会用随机数据替代。")
         intro.setWordWrap(True)
         root.addWidget(intro)
 
@@ -216,48 +219,45 @@ class PqcDemoTab(QWidget):
         sv.addWidget(self.signature_raw_output, 1)
         self.pages.addTab(signing, "③ 后量子数字签名")
 
-        hybrid_signing = QWidget()
-        hsv = QVBoxLayout(hybrid_signing)
-        hybrid_sign_hint = QLabel("传统算法与后量子算法共同签名，必须两份签名都通过才接受；分别演示消息、传统签名和后量子签名被篡改后的拒绝结果。")
-        hybrid_sign_hint.setWordWrap(True)
-        hsv.addWidget(hybrid_sign_hint)
-        hybrid_sign_controls = QHBoxLayout()
-        hybrid_sign_controls.addWidget(QLabel("传统签名"))
-        self.hybrid_signature_classical_combo = QComboBox()
-        self.hybrid_signature_classical_combo.addItems(pqc_demo.CLASSICAL_SIGNATURE_VARIANTS)
-        hybrid_sign_controls.addWidget(self.hybrid_signature_classical_combo)
-        hybrid_sign_controls.addWidget(QLabel("后量子签名"))
-        self.hybrid_signature_combo = QComboBox()
-        self.hybrid_signature_combo.addItems(pqc_demo.SIGNATURE_VARIANTS)
-        self.hybrid_signature_combo.setCurrentText("ML-DSA-65")
-        hybrid_sign_controls.addWidget(self.hybrid_signature_combo)
-        self.btn_hybrid_sign = QPushButton("生成混合签名并验签")
-        self.btn_hybrid_sign.setObjectName("primary")
-        self.btn_hybrid_sign.clicked.connect(lambda: self._start("hybrid_sign"))
-        hybrid_sign_controls.addWidget(self.btn_hybrid_sign)
-        hybrid_sign_controls.addStretch(1)
-        hsv.addLayout(hybrid_sign_controls)
-        hybrid_signature_result = QGroupBox("执行过程与结论")
-        hsr = QVBoxLayout(hybrid_signature_result)
-        self.hybrid_signature_status = QLabel("等待运行")
-        hsr.addWidget(self.hybrid_signature_status)
-        self.hybrid_signature_output = QTextEdit()
-        self.hybrid_signature_output.setReadOnly(True)
-        self.hybrid_signature_output.setPlaceholderText("输入消息并运行，查看两份签名、混合验签和篡改拒绝结果。")
-        self.hybrid_signature_result_tabs = QTabWidget()
-        self.hybrid_signature_trace_view = CalculationTraceView()
-        self.hybrid_signature_result_tabs.addTab(self.hybrid_signature_output, "执行摘要")
-        self.hybrid_signature_result_tabs.addTab(self.hybrid_signature_trace_view, "参数与计算过程")
-        hsr.addWidget(self.hybrid_signature_result_tabs, 1)
-        hsv.addWidget(hybrid_signature_result, 1)
-        self.hybrid_signature_raw_checkbox = QCheckBox("显示两份公钥与签名（Base64）")
-        hsv.addWidget(self.hybrid_signature_raw_checkbox)
-        self.hybrid_signature_raw_output = QPlainTextEdit()
-        self.hybrid_signature_raw_output.setReadOnly(True)
-        self.hybrid_signature_raw_output.setVisible(False)
-        self.hybrid_signature_raw_checkbox.toggled.connect(self.hybrid_signature_raw_output.setVisible)
-        hsv.addWidget(self.hybrid_signature_raw_output, 1)
-        self.pages.addTab(hybrid_signing, "④ 混合数字签名")
+        replay = QWidget()
+        rv = QVBoxLayout(replay)
+        replay_hint = QLabel("选择前面深度检测生成的同次连接材料，或导入抓包证据 JSON；可在下方补充客户端临时私钥、流量密钥和期望明文。复算不会生成替代数据。")
+        replay_hint.setWordWrap(True)
+        rv.addWidget(replay_hint)
+        replay_controls = QHBoxLayout()
+        replay_controls.addWidget(QLabel("会话"))
+        self.replay_session_combo = QComboBox()
+        replay_controls.addWidget(self.replay_session_combo, 1)
+        self.btn_refresh_replay = QPushButton("刷新会话")
+        self.btn_refresh_replay.clicked.connect(self.refresh_replay_sessions)
+        replay_controls.addWidget(self.btn_refresh_replay)
+        self.btn_open_replay = QPushButton("导入证据包")
+        self.btn_open_replay.clicked.connect(self.open_replay_bundle)
+        replay_controls.addWidget(self.btn_open_replay)
+        self.btn_replay = QPushButton("执行实际连接复算")
+        self.btn_replay.setObjectName("primary")
+        self.btn_replay.clicked.connect(self.run_selected_replay)
+        replay_controls.addWidget(self.btn_replay)
+        rv.addLayout(replay_controls)
+        self.replay_bundle_edit = QPlainTextEdit()
+        self.replay_bundle_edit.setPlaceholderText("选择会话后自动填充；也可粘贴证据包 JSON 并补充必要秘密。")
+        rv.addWidget(self.replay_bundle_edit, 1)
+        self.replay_status = QLabel("等待实际连接材料")
+        self.replay_status.setWordWrap(True)
+        rv.addWidget(self.replay_status)
+        self.replay_result_tabs = QTabWidget()
+        self.replay_output = QTextEdit()
+        self.replay_output.setReadOnly(True)
+        self.replay_result_tabs.addTab(self.replay_output, "过程与结论")
+        self.replay_input_view = QPlainTextEdit()
+        self.replay_input_view.setReadOnly(True)
+        self.replay_result_tabs.addTab(self.replay_input_view, "实际输入")
+        self.replay_result_json = QPlainTextEdit()
+        self.replay_result_json.setReadOnly(True)
+        self.replay_result_tabs.addTab(self.replay_result_json, "完整输出 JSON")
+        rv.addWidget(self.replay_result_tabs, 2)
+        self.pages.addTab(replay, "④ 实际连接复算")
+        self.replay_session_combo.currentIndexChanged.connect(self._load_selected_replay_bundle)
         self.pages.currentChanged.connect(self._sync_message_visibility)
         self._sync_message_visibility(self.pages.currentIndex())
 
@@ -265,6 +265,127 @@ class PqcDemoTab(QWidget):
         super().showEvent(event)
         if self._capture_provider is not None:
             self.import_captured_parameters()
+        self.refresh_replay_sessions()
+
+    def refresh_replay_sessions(self):
+        self.replay_session_combo.blockSignals(True)
+        self.replay_session_combo.clear()
+        self._replay_sessions = []
+        try:
+            reports = []
+            if self._session_provider is not None:
+                supplied = self._session_provider() or []
+                reports = supplied if isinstance(supplied, list) else [supplied]
+            elif self._capture_provider is not None:
+                reports = [self._capture_provider() or {}]
+            for report in reports:
+                if not isinstance(report, dict):
+                    continue
+                bundle = (report.get("deep") or {}).get("replay_bundle")
+                if not bundle:
+                    continue
+                label = "%s:%s · %s" % (report.get("host") or "目标", report.get("port") or "",
+                                        bundle.get("key_exchange", {}).get("algorithm", "未知算法"))
+                self._replay_sessions.append(bundle)
+                self.replay_session_combo.addItem(label)
+        except Exception as exc:
+            self._set_replay_status("读取检测会话失败：%s" % exc, False)
+        finally:
+            self.replay_session_combo.blockSignals(False)
+        if self.replay_session_combo.count():
+            self.replay_session_combo.setCurrentIndex(0)
+            self._load_selected_replay_bundle(0)
+        else:
+            self.replay_bundle_edit.setPlainText("")
+            self._set_replay_status("没有可复算的深度检测会话；请先完成深度检测，或导入包含必要秘密的证据包。", None)
+
+    def _load_selected_replay_bundle(self, index):
+        if not 0 <= index < len(self._replay_sessions):
+            return
+        self.replay_bundle_edit.setPlainText(
+            json.dumps(self._replay_sessions[index], ensure_ascii=False, indent=2))
+        self._set_replay_status("已载入同次连接材料；可补充缺失秘密后执行复算。", None)
+
+    def open_replay_bundle(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择实际连接证据包", "", "JSON (*.json);;所有文件 (*)")
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8-sig") as handle:
+                bundle = pqc_replay.load_bundle(handle.read())
+            self.replay_bundle_edit.setPlainText(json.dumps(bundle, ensure_ascii=False, indent=2))
+            self.replay_session_combo.blockSignals(True)
+            self.replay_session_combo.setCurrentIndex(-1)
+            self.replay_session_combo.blockSignals(False)
+            self._set_replay_status("已导入证据包：%s" % path, None)
+        except Exception as exc:
+            self._set_replay_status("导入证据包失败：%s" % exc, False)
+
+    def _set_replay_status(self, message, success):
+        color = "#166534" if success else "#b91c1c" if success is False else "#475569"
+        background = "#dcfce7" if success else "#fee2e2" if success is False else "#e2e8f0"
+        self.replay_status.setText(message)
+        self.replay_status.setStyleSheet(
+            "QLabel { color: %s; background: %s; padding: 8px 12px; border-radius: 6px; font-weight: 600; }"
+            % (color, background))
+
+    def run_selected_replay(self):
+        source = self.replay_bundle_edit.toPlainText()
+        self.replay_output.clear()
+        self.replay_input_view.setPlainText(source)
+        self.replay_result_json.clear()
+        try:
+            result = pqc_replay.run_replay(source)
+        except ReplayInputError as exc:
+            self.replay_output.setPlainText("证据包不可用：%s" % exc)
+            self._set_replay_status("证据包不可用", False)
+            return
+        except Exception as exc:
+            self.replay_output.setPlainText("复算失败：%s: %s" % (type(exc).__name__, exc))
+            self._set_replay_status("复算失败", False)
+            return
+        self.replay_result_json.setPlainText(json.dumps(result, ensure_ascii=False, indent=2))
+        self._render_replay_result(result)
+
+    def _render_replay_result(self, result):
+        lines = ["实际连接复算 · " + result["message"]]
+        lines += ["", "① Certificate 列表严格解析（叶子优先）"]
+        for cert in result["certificates"]:
+            lines.append("%s / %s：SPKI OID %s，公钥 %d 字节，SHA-256 %s" % (
+                cert["position"], cert["subject"], cert["spki_algorithm_oid"],
+                cert["spki_public_key_bytes"], cert["spki_public_key_sha256"]))
+            lines.append("证书签名：%s（OID %s，%d 字节）；证书指纹：%s" % (
+                cert["signature_algorithm"], cert["signature_algorithm_oid"],
+                cert["signature_bytes"], cert["certificate_sha256"]))
+        exchange = result["key_exchange"]
+        lines += ["", "② 密钥封装 / 交换复算：" + exchange["message"]]
+        lines.append("算法：%s；服务器材料 %d 字节；计算秘密 SHA-256：%s" % (
+            exchange.get("algorithm", "—"), exchange.get("server_material_bytes", 0),
+            exchange.get("computed_shared_secret_sha256", "—")))
+        lines.append("计算共享秘密（Base64）：%s" % exchange.get("computed_shared_secret_base64", "—"))
+        lines.append("记录秘密 SHA-256：%s；一致性：%s" % (
+            exchange.get("expected_shared_secret_sha256", "—"),
+            "一致" if exchange.get("shared_secret_matches") else "不一致"))
+        signature = result["handshake_signature"]
+        lines += ["", "③ 握手签名验签：" + signature["message"]]
+        lines.append("方案：%s（%s）；签名 %s 字节；叶子 SPKI SHA-256：%s" % (
+            signature.get("scheme", "—"), signature.get("scheme_name", "—"),
+            signature.get("signature_bytes", 0), signature.get("leaf_spki_public_key_sha256", "—")))
+        lines += ["", "④ 加密报文认证解密"]
+        if not result["encrypted_records"]:
+            lines.append("未提供加密报文或流量密钥。")
+        for record in result["encrypted_records"]:
+            lines.append("记录 %d：%s；密文 %d 字节；明文 %d 字节；%s" % (
+                record["index"] + 1, record.get("algorithm", "—"),
+                record.get("ciphertext_bytes", 0), record.get("plaintext_bytes", 0),
+                record["message"]))
+        if result["missing"]:
+            lines += ["", "缺少必要参数：" + "、".join(result["missing"])]
+        lines += ["", "一致性结论：" + result["message"]]
+        self._render_report(self.replay_output, lines)
+        self._set_replay_status(
+            "复算完成 · " + result["message"], result["conclusion"] == "verified")
 
     def import_captured_parameters(self):
         if self._capture_provider is None:
@@ -312,44 +433,38 @@ class PqcDemoTab(QWidget):
         return True
 
     def _sync_message_visibility(self, index):
-        self.message_box.setVisible(index != 0)
+        self.message_box.setVisible(index in (1, 2))
 
     def _calculation_widgets(self, operation):
         return {"kem": (self.kem_trace_view, self.kem_result_tabs),
                 "hybrid": (self.hybrid_trace_view, self.hybrid_result_tabs),
-                "sign": (self.signature_trace_view, self.signature_result_tabs),
-                "hybrid_sign": (self.hybrid_signature_trace_view, self.hybrid_signature_result_tabs)}[operation]
+                "sign": (self.signature_trace_view, self.signature_result_tabs)}[operation]
 
     def _start(self, operation):
         if self._worker is not None and self._worker.isRunning():
             return
         message = self.message_edit.toPlainText().encode("utf-8")
         outputs = {"kem": self.kem_output, "hybrid": self.hybrid_output,
-                   "sign": self.signature_output,
-                   "hybrid_sign": self.hybrid_signature_output}
+                   "sign": self.signature_output}
         output = outputs[operation]
         view, tabs = self._calculation_widgets(operation)
         view.clear()
         tabs.setCurrentIndex(0)
         {"kem": self.kem_raw_output, "hybrid": self.hybrid_raw_output,
-         "sign": self.signature_raw_output,
-         "hybrid_sign": self.hybrid_signature_raw_output}[operation].clear()
+         "sign": self.signature_raw_output}[operation].clear()
         if operation != "kem" and len(message) > 4096:
             output.setPlainText("输入消息超过 4096 字节（UTF-8）；请缩短后重试。")
             self._set_status(operation, "输入过长", False)
             return
         algorithm = {"kem": self.standalone_kem_combo.currentText(),
                      "hybrid": self.kem_combo.currentText(),
-                     "sign": self.signature_combo.currentText(),
-                     "hybrid_sign": self.hybrid_signature_combo.currentText()}[operation]
+                     "sign": self.signature_combo.currentText()}[operation]
         output.setPlainText("正在执行真实密码运算…")
         self._set_status(operation, "运行中…", None)
         self.btn_kem.setEnabled(False)
         self.btn_hybrid.setEnabled(False)
         self.btn_sign.setEnabled(False)
-        self.btn_hybrid_sign.setEnabled(False)
-        classical_algorithm = (self.hybrid_signature_classical_combo.currentText()
-                               if operation == "hybrid_sign" else self.classical_combo.currentText())
+        classical_algorithm = self.classical_combo.currentText()
         worker = _DemoWorker(operation, message, algorithm,
                              classical_algorithm, self)
         self._worker = worker
@@ -360,8 +475,7 @@ class PqcDemoTab(QWidget):
 
     def _set_status(self, operation, message, success):
         label = {"kem": self.kem_status, "hybrid": self.hybrid_status,
-                 "sign": self.signature_status,
-                 "hybrid_sign": self.hybrid_signature_status}[operation]
+                 "sign": self.signature_status}[operation]
         color = "#166534" if success else "#b91c1c" if success is False else "#475569"
         background = "#dcfce7" if success else "#fee2e2" if success is False else "#e2e8f0"
         label.setText(message)
@@ -369,8 +483,7 @@ class PqcDemoTab(QWidget):
 
     def _show_failure(self, operation, error):
         {"kem": self.kem_output, "hybrid": self.hybrid_output,
-         "sign": self.signature_output,
-         "hybrid_sign": self.hybrid_signature_output}[operation].setPlainText("运行失败：" + error)
+         "sign": self.signature_output}[operation].setPlainText("运行失败：" + error)
         self._set_status(operation, "运行失败", False)
 
     @staticmethod
@@ -393,7 +506,6 @@ class PqcDemoTab(QWidget):
         self.btn_kem.setEnabled(True)
         self.btn_hybrid.setEnabled(True)
         self.btn_sign.setEnabled(True)
-        self.btn_hybrid_sign.setEnabled(True)
         if self._worker is not None:
             self._worker.deleteLater()
             self._worker = None

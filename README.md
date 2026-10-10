@@ -15,7 +15,7 @@ Linux Conda `code` 环境已更新至 OpenSSL 3.6.5；多协议扩展后完整�
 | ① TLS 1.3 后量子检测 | 主动握手探测 HTTPS 站点的密钥交换是否为抗量子算法（X25519MLKEM768 等），并解析证书签名/公钥算法，分层给出结论与总体判定 |
 | ② 本地后量子实验站 | HTTPS / TLS 1.3 / TCP / UDP 四种真实实验；3 种混合交换组，17 种后量子消息签名与可选经典混合签名，逐项验证及证据展示 |
 | ③ 协议分析与抓包 | 导入或现场抓取 pcap；按 TLS 会话并列展示抓包观察与主动后量子复测；保留协议时序图和报文列表 |
-| ④ 后量子算法演示 | 独立 ML-KEM、ECDH + ML-KEM 混合加密、后量子签名，以及传统算法 + 后量子算法的混合签名验签 |
+| ④ 后量子算法演示 | 独立 ML-KEM、ECDH + ML-KEM 混合加密、后量子签名，以及同次连接证据的实际复算 |
 | ⑤ 后量子算法对比 | 对照 X25519、ECDH、Ed25519、ECDSA、RSA-PSS、SM2，展示四类后量子算法的用途、公钥与输出大小、数学基础、标准状态 |
 | ⑥ 国密 SM2 / SM3 | SM2密钥对生成、SM3 摘要、SM2 签名（SM3withSM2）、验签、公钥加密 / 私钥解密（C1C3C2），多格式消息与文件导入 |
 | ⑦ 常用编码转换 | Base64 / Base64URL / HEX（大小写）/ UTF-8 / URL 编解码，多格式一键互转 |
@@ -66,10 +66,10 @@ Linux Conda `code` 环境已更新至 OpenSSL 3.6.5；多协议扩展后完整�
 - ML-DSA 展示 n / q / k / l / η / τ / β / γ1 / γ2 / ω，解码本轮 ρ、秘密向量、z、h、挑战；逐层 NTT、矩阵乘积、公开密钥关系、由 z−c·s1 重建的实际掩码 y、承诺和挑战比对。公式对应 [NIST (2024/08), FIPS 204，算法 6–8、23–48](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.204.pdf)。
 - SLH 类展示本轮种子与随机化值 R、摘要和 FORS 叶索引、秘密叶、完整认证路径、WOTS+ 签名/验签链及各层 XMSS 根；全部 12 组参数均可运行。本项目实际调用 `pqcrypto` 的 SPHINCS+ simple 后端，直接签署原始消息，FORS 索引按低位优先读取；与 FIPS 205 的外部消息格式不同，详情会注明这一点。参见 [PQClean SPHINCS+ 后端源码](https://github.com/PQClean/PQClean/tree/master/crypto_sign) 和 [NIST (2024/08), FIPS 205，表 2、附录 A](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.205.pdf)。
 - Falcon 展示 512 / 1024 维参数、实际 nonce、公开多项式 h、密钥关系、压缩签名 s2、SHAKE256 哈希到点、环乘积、恢复 s1 及平方范数检查，全部系数可查看。[Falcon 实现，codec/common/vrfy](https://falcon-sign.info/impl/)
-- 在「④ 混合数字签名」选择 Ed25519、ECDSA-P256 / P384 或 RSA-PSS-2048 / 3072，再选择现有任一后量子签名算法。每次生成两组临时密钥；两份签名共同绑定算法名称、两份公钥和消息，验签时必须**传统签名 AND 后量子签名都通过**。同时展示改动消息、篡改传统签名、篡改后量子签名的独立验签结果，以及两份公钥、签名的字节数和按需展开的 Base64。
-- 混合签名详情展示实际的版本、算法名、公钥、消息及 8 字节大端长度前缀，再分别展开两个组件的计算。传统部分包含 Ed25519 种子展开、确定性 nonce 和验签点；ECDSA 的 r / s、摘要、等价 nonce 与验签点；RSA-PSS 的真实盐、MGF1、EM 和摘要比对。最后展示正常与三种篡改下的 AND 结果。[RFC 8032 (2017/01), §5.1](https://www.rfc-editor.org/rfc/rfc8032.html#section-5.1)、[FIPS 186-5 (2023/02), §6](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-5.pdf)、[RFC 8017 (2016/11), §8.1–9.1](https://www.rfc-editor.org/rfc/rfc8017.html#section-8.1)
-- 混合签名采用本项目的离线教学双签名格式；核心接口 `sign_hybrid_message(message, pq_algorithm, classical_algorithm)` 生成公开签名数据，`verify_hybrid_signature(message, signature_data)` 仅用公开数据验签。它与 IETF Composite ML-DSA 的编码格式不同，不能用于该规范的互通测试。标准化组合见 [Composite ML-DSA (2026/04), §2–4](https://www.ietf.org/archive/id/draft-ietf-lamps-pq-composite-sigs-19.html)。
-- 混合加密与签名的输入消息限 4096 字节（UTF-8），界面会在运行前提示超限。
+- 在「④ 实际连接复算」选择前面的深度检测会话，或导入包含实际抓包材料的 JSON 证据包。复算前先严格解析同次握手 Certificate 列表：叶子证书 SPKI 的算法 OID 与公钥字节、证书签名算法、参数长度和 SHA-256 指纹均来自原始 DER。
+- 深度检测会话自动携带服务器交换材料、同次 CertificateVerify、解密记录以及本工具客户端的临时私钥。外部抓包通常缺少秘密，可在 JSON 中补充客户端临时私钥或流量密钥；缺失项会逐项列出，不会生成随机替代值。
+- 复算按类型执行：ML-KEM 解封装 / ECDH 计算并比较共享秘密；用叶子证书 SPKI 公钥验证握手签名以确认服务器掌握对应私钥；用原连接 AEAD 密钥、nonce、AAD 解密记录并检查认证标签及明文一致性。界面同时展示实际输入、计算过程、完整输出 JSON 和总一致性结论。
+- 外部证据 JSON 的顶层为 `session`、`certificates`、`key_exchange`、`handshake_signature`、`encrypted_records`；二进制材料使用 Base64（也支持 `hex:` / `base64:` 前缀）。`same_handshake: false` 时拒绝复算，避免把另一条连接的证书或密文混入。
 - 运行演示时关闭主窗口，会等待当前密码运算完成后自动退出，避免在运算中销毁后台线程。
 - 混合加密与签名页的输入区、演示区之间可以拖动分隔条，计算详情的步骤树与数值区也可调整宽度。完整 Base64 公钥、封装密文、加密密文及签名按需展开。
 - 计算详情按教学用途显示本轮临时随机种子、私钥中间量与共享秘密；只在内存和界面中保留，不自动保存或写入日志，重试前清除上次详情。签名生成仍由原生库执行，数学重放必须与原生验签一致，不一致即报告失败。

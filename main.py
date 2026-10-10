@@ -3402,6 +3402,7 @@ class PqcDetectTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._report = None
+        self._reports = []
         self._worker = None
         self.setAcceptDrops(True)
         root = QVBoxLayout(self)
@@ -3607,6 +3608,10 @@ class PqcDetectTab(QWidget):
         """Return the latest PQC detection report for other pages."""
         return self._report
 
+    def recent_reports(self):
+        """Return completed PQC detection reports, newest last."""
+        return list(self._reports)
+
     def _client_hello_summary(self, transport):
         hello = (transport or {}).get("client_hello") or {}
         if not hello:
@@ -3723,6 +3728,7 @@ class PqcDetectTab(QWidget):
 
     def _on_done(self, report):
         self._report = report
+        self._reports.append(report)
         # 详细报文（原始 hex + 逐字段说明）自动落盘，界面只展示交互框架
         try:
             path = self._write_detail(report, self._detail_file_path(report))
@@ -3902,7 +3908,8 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._pqc_lab_tab, "② 本地后量子实验站")
         self._pcap_tab = PcapTab()
         tabs.addTab(self._pcap_tab, "③ 协议分析与抓包")
-        self._pqc_demo_tab = PqcDemoTab(capture_provider=detect_tab.latest_report)
+        self._pqc_demo_tab = PqcDemoTab(capture_provider=detect_tab.latest_report,
+                                        session_provider=detect_tab.recent_reports)
         self._demo_close_pending = False
         tabs.addTab(self._pqc_demo_tab, "④ 后量子算法演示")
         tabs.addTab(PqcCompareTab(), "⑤ 后量子算法对比")
