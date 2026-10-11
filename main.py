@@ -32,7 +32,9 @@ sys.path.insert(0, '.')
 from modules import sm2_sm3, codec, pcap_analysis, cert_analysis, packet_parser
 from modules import sym_crypto, hash_tools, handshake_view
 from modules import pqc_detect, pqc_passive, live_capture
-from modules.pqc_demo_ui import PqcDemoTab, PqcCompareTab
+from modules.pqc_demo_ui import PqcCompareTab
+from modules.pqc_recheck_ui import PqcRecheckTab
+from modules import pqc_recheck
 from modules.pqc_lab_ui import PqcLabTab
 TCP = packet_parser.TCP
 
@@ -2007,6 +2009,10 @@ class PcapTab(QWidget):
                 "client": flow.get("client"), "server": flow.get("server"),
                 "passive_observation": observation,
                 "active_probe": pqc_detect.report_to_json(active) if active else None,
+                "recheck_session": pqc_recheck.public_session(pqc_recheck.session_from_streams(
+                    (flow.get("wire") or {}).get("client", b""),
+                    (flow.get("wire") or {}).get("server", b""),
+                    label="抓包 %s → %s" % (flow.get("client", ""), flow.get("server", "")))),
             })
         report = {
             "capture_file": self.path_label.text(),
@@ -3367,13 +3373,14 @@ class _PqcWorker(QThread):
     done = Signal(dict)
 
     def __init__(self, host, port, timeout, check_cert, mode="deep", parent=None,
-                 cancellable=False):
+                 cancellable=False, retain_secrets=False):
         super().__init__(parent)
         self._host, self._port = host, port
         self._timeout, self._check_cert = timeout, check_cert
         self._mode = mode
         self.cancel_event = threading.Event()
         self._cancellable = cancellable
+        self._retain_secrets = retain_secrets
 
     def run(self):
         try:
@@ -3381,6 +3388,8 @@ class _PqcWorker(QThread):
                       "log": self.logged.emit, "mode": self._mode}
             if self._cancellable:
                 kwargs["cancel_event"] = self.cancel_event
+            if self._retain_secrets:
+                kwargs["retain_secrets"] = True
             rep = pqc_detect.detect(self._host, self._port, **kwargs)
         except Exception as e:
             rep = {"host": self._host, "port": self._port,
@@ -3453,6 +3462,10 @@ class PqcDetectTab(QWidget):
             "解密服务器飞行，校验 Finished 与 CertificateVerify 签名。\n"
             "若服务器不支持该流程（如仅 TLS 1.2），会自动退回快速证据判定，并在结论中标注「未验证」。")
         mode_row.addWidget(self.mode_combo)
+        self.record_secrets_check = QCheckBox("为第四页保留本次临时秘密（仅内存）")
+        self.record_secrets_check.setChecked(True)
+        self.record_secrets_check.setToolTip("深度检测保留本次客户端的临时私钥和共享秘密，供实际连接复核；JSON / 日志不会导出秘密。")
+        mode_row.addWidget(self.record_secrets_check)
         hint = QLabel("深度验证服务器侧握手；完整原始报文自动保存，可拖入证书单独检测。")
         hint.setWordWrap(True)
         hint.setStyleSheet("color:#78909C; font-size:11px;")
@@ -3492,6 +3505,14 @@ class PqcDetectTab(QWidget):
         self.cert_table.verticalHeader().setVisible(False)
         self.cert_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.cert_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.cert_table.setWordWrap(True)
+        self.cert_table.setTextElideMode(Qt.TextElideMode.ElideNone)
+        # Word wrapping alone does not update row heights when the window narrows.
+        self._stage_resize_timer = QTimer(self)
+        self._stage_resize_timer.setSingleShot(True)
+        self._stage_resize_timer.timeout.connect(self.cert_table.resizeRowsToContents)
+        self.cert_table.horizontalHeader().sectionResized.connect(
+            lambda *_: self._stage_resize_timer.start(0))
         cert_layout.addWidget(self.cert_table)
         root.addWidget(cert_box, 1)
 
@@ -3594,7 +3615,8 @@ class PqcDetectTab(QWidget):
         self.btn_run.setEnabled(False)
         self.btn_run.setText("检测中…")
         # 证书层为必选：始终抓取并分析服务器证书
-        self._worker = _PqcWorker(host, port, timeout, True, mode, self)
+        self._worker = _PqcWorker(host, port, timeout, True, mode, self,
+                                  retain_secrets=self.record_secrets_check.isChecked())
         self._worker.logged.connect(self._log)
         self._worker.done.connect(self._on_done)
         self._worker.finished.connect(self._on_finished)
@@ -3656,13 +3678,92 @@ class PqcDetectTab(QWidget):
         row = self.cert_table.rowCount()
         self.cert_table.insertRow(row)
         self.cert_table.setItem(row, 0, QTableWidgetItem(step))
-        self.cert_table.setItem(row, 1, QTableWidgetItem(data))
+        data_item = QTableWidgetItem(data)
+        data_item.setToolTip(data)
+        self.cert_table.setItem(row, 1, data_item)
         result_item = QTableWidgetItem(result)
         color = {"通过": QColor("#15803D"), "未完成": QColor("#B45309"),
+                 "不支持": QColor("#B45309"),
                  "失败": QColor("#B91C1C")}.get(result, QColor("#4B5563"))
         result_item.setForeground(QBrush(color))
         result_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cert_table.setItem(row, 2, result_item)
+
+    def _fill_handshake_steps(self, deep, transport, cert):
+        """Explain each calculation using this connection's actual progress and results."""
+        derived = deep.get("key_derivation") or {}
+        invalid_stage = deep.get("failed_stage") if deep.get("verification_error_kind") == "invalid" else ""
+        if not deep.get("shared_secret_len"):
+            reason = deep.get("error") or ("快速模式未执行密钥计算" if transport else "本地证书文件不包含握手数据")
+            self._add_stage_step("计算握手密钥",
+                                 "%s。\n需用本方临时私钥与服务器 key_share 算出共享秘密，才能派生密钥并解密后续握手。" % reason,
+                                 "失败" if invalid_stage == "key_derivation" else "未完成")
+            return
+
+        gid = deep.get("group_id") or transport.get("group_id")
+        if gid in (0x11EC, 0x11EE):
+            exchange = "ML-KEM 解封装与 ECDH，按 ML-KEM ‖ ECDH 拼接"
+        elif gid in (0x11EB, 0x11ED):
+            exchange = "ECDH 与 ML-KEM 解封装，按 ECDH ‖ ML-KEM 拼接"
+        elif gid in (0x0200, 0x0201, 0x0202):
+            exchange = "ML-KEM 解封装"
+        else:
+            exchange = "ECDH" if gid in (0x0017, 0x0018, 0x0019, 0x001D) else "所选组的密钥交换计算"
+        key_data = "%s：用临时私钥与服务器 key_share 做%s，得到 %d B 共享秘密。" % (
+            deep.get("group_name") or transport.get("group_name") or "—",
+            exchange, deep["shared_secret_len"])
+        if derived:
+            key_data += "\n结合 Hello 转录，用 HKDF-%s 派生握手密钥 %d B、IV %d B 和 Finished 密钥 %d B。" % (
+                derived["hash_name"].upper(), derived["key_len"], derived["iv_len"], derived["finished_key_len"])
+        else:
+            key_data += "\n结合 Hello 转录，用 HKDF 派生服务器握手密钥、IV 和 Finished 密钥。"
+        key_data += "\n握手密钥与 IV 用于下一步解密，Finished 密钥用于后续完整性校验。"
+        self._add_stage_step("计算握手密钥", key_data, "通过")
+
+        server_messages = deep.get("server_messages", [])
+        flight_complete = any(item.get("type") == 20 or item.get("name") == "Finished"
+                              for item in server_messages)
+        messages = "、".join("%s（%d B）" % (item.get("name", ""), item.get("len", 0))
+                            for item in server_messages)
+        aead = {"aes": "AES-GCM", "chacha": "ChaCha20-Poly1305"}.get(derived.get("aead"), "AEAD")
+        decrypt_data = "用 %s、握手密钥和 IV 解密并校验记录认证标签；已取得：%s。" % (
+            aead, messages or "尚无完整握手消息")
+        decrypt_data += "\n从 Certificate 提取叶子证书及公钥，供下一步验证服务器的握手签名。"
+        if not flight_complete:
+            decrypt_data += "\n%s：%s" % (
+                "解密或消息解析失败" if invalid_stage == "server_handshake" else "握手读取未完成",
+                deep.get("error") or "未收到完整服务器握手")
+        decrypt_status = "通过" if flight_complete else (
+            "失败" if invalid_stage == "server_handshake" else "未完成")
+        self._add_stage_step("解密服务器握手", decrypt_data, decrypt_status)
+
+        verify = deep.get("cert_verify") or {}
+        leaf = "%s ← %s" % (deep.get("cert_subject") or cert.get("subject_cn") or "—",
+                              deep.get("cert_issuer") or cert.get("issuer_cn") or "—")
+        if verify:
+            signature = "%s · 签名 %d B" % (
+                verify.get("scheme_name") or verify.get("scheme") or "—", verify.get("sig_len", 0))
+            cv_data = "叶子证书：%s；用其公钥验证 %s。" % (leaf, signature)
+            cv_data += "\n验签内容为服务器上下文与此前握手的转录哈希；通过说明对端持有对应私钥，并将该证书绑定到本次握手。"
+            cv_status = "通过" if verify.get("verified") else (
+                "不支持" if verify.get("error_kind") == "unsupported" else "失败")
+            if verify.get("error"):
+                cv_data += "\n验签说明：%s" % verify["error"]
+        else:
+            if invalid_stage == "certificate_verify":
+                cv_data = "CertificateVerify 验签失败：%s。\n握手签名须格式完整，并能用叶子证书公钥通过验证，才能确认对端持有对应私钥。" % deep.get("error", "签名数据无效")
+                cv_status = "失败"
+            else:
+                cv_data = "未完成 CertificateVerify 验签；需取得叶子证书与握手签名，才能确认对端持有对应私钥。"
+                cv_status = "未完成"
+        self._add_stage_step("CertificateVerify", cv_data, cv_status)
+
+        finished_data = "用 Finished 密钥对此前握手转录哈希计算 HMAC，与服务器 verify_data%s 比较。" % (
+            "（%d B）" % deep["finished_len"] if deep.get("finished_len") is not None else "")
+        finished_data += "\n与 CertificateVerify 都通过后，服务器握手验证成立；证书的 CA 信任仍需另行核验。"
+        finished_status = "通过" if deep.get("finished_verified") else (
+            "失败" if deep.get("finished_len") is not None else "未完成")
+        self._add_stage_step("服务器 Finished", finished_data, finished_status)
 
     def _fill_compact_report(self, report):
         transport = report.get("transport") or {}
@@ -3678,32 +3779,8 @@ class PqcDetectTab(QWidget):
 
         self.cert_table.setRowCount(0)
         deep = report.get("deep") or {}
-        verify = deep.get("cert_verify") or {}
         cert = report.get("cert") or {}
-
-        if deep.get("ok"):
-            key_data = "%s：ML-KEM 解封装 ‖ ECDH；共享秘密 %d B → HKDF 派生服务器握手密钥" % (
-                transport.get("group_name") or "—", deep.get("shared_secret_len", 0))
-            self._add_stage_step("计算握手密钥", key_data, "通过")
-            messages = "、".join("%s（%d B）" % (item.get("name", ""), item.get("len", 0))
-                                 for item in deep.get("server_messages", []))
-            self._add_stage_step("解密服务器握手", messages or "未取得解密消息", "通过")
-            leaf = "叶子证书：%s ← %s" % (
-                deep.get("cert_subject") or cert.get("subject_cn") or "—",
-                deep.get("cert_issuer") or cert.get("issuer_cn") or "—")
-            signature = "%s · 签名 %d B · 证书公钥验签" % (
-                verify.get("scheme_name") or verify.get("scheme") or "—",
-                verify.get("sig_len", 0))
-            self._add_stage_step("CertificateVerify", leaf + "\n" + signature,
-                                 "通过" if verify.get("verified") else "失败")
-            self._add_stage_step("服务器 Finished",
-                                 "HMAC(握手转录哈希) · verify_data %d B；不发送客户端 Finished" % (
-                                     deep.get("finished_len", 0)),
-                                 "通过" if deep.get("finished_verified") else "失败")
-        else:
-            self._add_stage_step("计算握手密钥",
-                                 "深度验证未完成：%s" % (deep.get("error") or "未启用"),
-                                 "未完成")
+        self._fill_handshake_steps(deep, transport, cert)
 
         if transport and not transport.get("verified") and (report.get("transport_fallback") or report.get("group_matrix")):
             fallback = report.get("transport_fallback") or {}
@@ -3718,17 +3795,31 @@ class PqcDetectTab(QWidget):
             self._add_stage_step("证书详情获取", cert["error"], "失败")
         elif cert:
             chain = report.get("cert_chain") or []
-            source = {"deep-handshake": "深度握手 Certificate 消息", "openssl": "独立连接 · openssl s_client"}.get(
-                cert.get("fetched_via"), "独立连接 · Python ssl")
-            data = "%s\n签名算法：%s · 公钥算法：%s\n证书链：%d 张 · %s\nCA 信任：未验证" % (
-                source, cert.get("sig_algorithm") or "—", cert.get("pub_algorithm") or "—",
-                len(chain), "整链抗量子" if report.get("chain_fully_pqc") else "未完全抗量子")
+            source = {"deep-handshake": "本次握手的 Certificate 消息",
+                      "openssl": "独立连接 · openssl s_client",
+                      "python-ssl": "独立连接 · Python ssl"}.get(
+                cert.get("fetched_via"), "独立连接获取的证书" if transport else "本地证书文件")
+            algorithms = []
+            for prefix, label in (("sig", "签名"), ("pub", "公钥")):
+                detail = "%s %s" % (label, cert.get(prefix + "_algorithm") or "—")
+                if cert.get(prefix + "_bytes") is not None:
+                    detail += "（%d B%s）" % (
+                        cert[prefix + "_bytes"],
+                        "，规范长度一致" if cert.get(prefix + "_size_ok") is True else
+                        "，规范长度不符" if cert.get(prefix + "_size_ok") is False else "")
+                algorithms.append(detail)
+            chain_text = "收到 %d 张证书，%s" % (
+                len(chain), "所收证书均使用抗量子签名及公钥" if report.get("chain_fully_pqc") else "含经典或未确认算法") if chain else "仅分析当前证书，未取得证书链"
+            data = "%s：%s ← %s。\n识别%s；%s。\nCA 信任：本页未验证。还需以受信任根 CA 构建链，逐级验证证书签名，并核对有效期及目标域名。" % (
+                source, cert.get("subject_cn") or "—", cert.get("issuer_cn") or "—",
+                "、".join(algorithms), chain_text)
             self._add_stage_step("证书详情", data, "已解析")
         self.cert_table.resizeRowsToContents()
 
     def _on_done(self, report):
         self._report = report
         self._reports.append(report)
+        self._reports = self._reports[-10:]
         # 详细报文（原始 hex + 逐字段说明）自动落盘，界面只展示交互框架
         try:
             path = self._write_detail(report, self._detail_file_path(report))
@@ -3882,6 +3973,7 @@ class PqcDetectTab(QWidget):
 
     def _clear(self):
         self._report = None
+        self._reports.clear()
         self.host_edit.clear()
         self.cert_table.setRowCount(0)
         self._log_lines = []
@@ -3903,15 +3995,15 @@ class MainWindow(QMainWindow):
 
         tabs = QTabWidget()
         detect_tab = PqcDetectTab()
+        self._detect_tab = detect_tab
         tabs.addTab(detect_tab, "① TLS 1.3 后量子检测")
         self._pqc_lab_tab = PqcLabTab(base=pqc_lab_base)
         tabs.addTab(self._pqc_lab_tab, "② 本地后量子实验站")
         self._pcap_tab = PcapTab()
         tabs.addTab(self._pcap_tab, "③ 协议分析与抓包")
-        self._pqc_demo_tab = PqcDemoTab(capture_provider=detect_tab.latest_report,
-                                        session_provider=detect_tab.recent_reports)
-        self._demo_close_pending = False
-        tabs.addTab(self._pqc_demo_tab, "④ 后量子算法演示")
+        self._pqc_recheck_tab = PqcRecheckTab(session_provider=self._recheck_sessions)
+        self._recheck_close_pending = False
+        tabs.addTab(self._pqc_recheck_tab, "④ 实际连接计算复核")
         tabs.addTab(PqcCompareTab(), "⑤ 后量子算法对比")
         tabs.addTab(Sm2Sm3Tab(), "⑥ 国密 SM2 / SM3（签名 / 验签 / 加解密）")
         tabs.addTab(CodecTab(), "⑦ 常用编码转换")
@@ -3927,6 +4019,19 @@ class MainWindow(QMainWindow):
         tabs.setCurrentIndex(0)
         self.setCentralWidget(tabs)
         self.statusBar().showMessage("就绪 — 第二个页签提供 HTTPS / TLS / TCP / UDP 与数字签名实测")
+
+    def _recheck_sessions(self):
+        sessions = [pqc_recheck.session_from_report(report) for report in self._detect_tab._reports]
+        for key in self._pcap_tab._passive_reports:
+            flow = (self._pcap_tab._streams or {}).get(key) or {}
+            wire = flow.get("wire") or {}
+            sessions.append(pqc_recheck.session_from_streams(wire.get("client", b""), wire.get("server", b""),
+                label="抓包 %s → %s" % (flow.get("client", ""), flow.get("server", ""))))
+            active = self._pcap_tab._active_reports.get(key)
+            if active:
+                sessions.append(pqc_recheck.session_from_report(active, label="主动复测（独立连接） %s:%s" % (
+                    active.get("host", ""), active.get("port", ""))))
+        return sessions
 
     def _finish_lab_close(self):
         if self._lab_close_pending:
@@ -3948,13 +4053,13 @@ class MainWindow(QMainWindow):
             self._pcap_tab._cancel_probe()
             event.ignore()
             return
-        demo = self._pqc_demo_tab._worker
-        if demo is not None and demo.isRunning():
-            if not self._demo_close_pending:
-                self._demo_close_pending = True
+        recheck = self._pqc_recheck_tab._worker
+        if recheck is not None and recheck.isRunning():
+            if not self._recheck_close_pending:
+                self._recheck_close_pending = True
                 self.setEnabled(False)
-                demo.finished.connect(self.close)
-                if not demo.isRunning():
+                recheck.finished.connect(self.close)
+                if not recheck.isRunning():
                     QTimer.singleShot(0, self.close)
             self.statusBar().showMessage("正在完成当前密码运算，完成后自动关闭…")
             event.ignore()

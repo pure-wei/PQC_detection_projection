@@ -42,7 +42,7 @@ def test_protocol_analysis_follows_local_lab():
     tabs = window.centralWidget()
     assert isinstance(tabs.widget(2), PcapTab)
     assert tabs.tabText(2) == "③ 协议分析与抓包"
-    assert tabs.tabText(3) == "④ 后量子算法演示"
+    assert tabs.tabText(3) == "④ 实际连接计算复核"
     window.close()
 
 

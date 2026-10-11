@@ -15,7 +15,7 @@ Linux Conda `code` 环境已更新至 OpenSSL 3.6.5；多协议扩展后完整�
 | ① TLS 1.3 后量子检测 | 主动握手探测 HTTPS 站点的密钥交换是否为抗量子算法（X25519MLKEM768 等），并解析证书签名/公钥算法，分层给出结论与总体判定 |
 | ② 本地后量子实验站 | HTTPS / TLS 1.3 / TCP / UDP 四种真实实验；3 种混合交换组，17 种后量子消息签名与可选经典混合签名，逐项验证及证据展示 |
 | ③ 协议分析与抓包 | 导入或现场抓取 pcap；按 TLS 会话并列展示抓包观察与主动后量子复测；保留协议时序图和报文列表 |
-| ④ 后量子算法演示 | 独立 ML-KEM、ECDH + ML-KEM 混合加密、后量子签名，以及同次连接证据的实际复算 |
+| ④ 实际连接计算复核 | 选择检测 / 抓包会话，导入同次连接秘密参数，重算密钥封装、验证握手签名并解密实际报文，展示输入、过程和一致性 |
 | ⑤ 后量子算法对比 | 对照 X25519、ECDH、Ed25519、ECDSA、RSA-PSS、SM2，展示四类后量子算法的用途、公钥与输出大小、数学基础、标准状态 |
 | ⑥ 国密 SM2 / SM3 | SM2密钥对生成、SM3 摘要、SM2 签名（SM3withSM2）、验签、公钥加密 / 私钥解密（C1C3C2），多格式消息与文件导入 |
 | ⑦ 常用编码转换 | Base64 / Base64URL / HEX（大小写）/ UTF-8 / URL 编解码，多格式一键互转 |
@@ -57,24 +57,21 @@ Linux Conda `code` 环境已更新至 OpenSSL 3.6.5；多协议扩展后完整�
 - 「导出后量子证据 JSON」按 TLS 会话分别保存抓包观察和主动复测结果；未复测的会话在 `active_probe` 中为 `null`。
 - 两种原有视图继续可用：密钥协商时序图，以及 Wireshark 式报文列表和字段树。对明文证书握手可解析证书，TLS 1.3 的加密证书需要会话密钥才能从 pcap 解读；当前抓包页尚不支持导入密钥日志。
 
-### ④ 后量子算法演示
-- 在「① ML-KEM 密钥封装」选择 ML-KEM-512 / 768 / 1024，独立运行密钥生成、封装和解封装。运行后自动打开「参数与计算过程」：左侧选择步骤或变量，右侧显示公式、本轮实际输入输出和计算示例；「执行摘要」保留长度、秘密一致性和篡改结果。此页无需输入消息。
-- 计算详情包含 n、q、k、η1 / η2、du / dv、环及编码长度；展示随机种子 d / z / m、SHA3 / SHAKE 派生、矩阵拒绝采样的候选与接受记录、CBD 噪声、每层 NTT / 逆 NTT、向量乘积、压缩和小端编码。矩阵及多项式的全部 256 个系数均可展开，字节以完整十六进制显示。解封装展示消息恢复、重加密密文比对，以及正常与篡改密文的候选秘密、隐式拒绝秘密和最终选择。运算对应 [NIST (2024/08), FIPS 203，算法 5–21](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf)。
-- 在「② 混合加密」输入 UTF-8 消息，选择 X25519 / P-256 / P-384 与 ML-KEM-512 / 768 / 1024（共 9 种组合），点击一次运行。每次现场生成临时密钥，双方协商的秘密经 HKDF-SHA256 组合为 AES-256-GCM 密钥。分步展示公钥和封装密文长度、解密原文、共享秘密一致性及篡改拒绝结果。这是离线教学流程，不是 TLS 实现或可持久化的文件加密格式。
-- 混合加密的「参数与计算过程」复用本轮实际 ML-KEM 运算，再展示 ECDH 秘密与 ML-KEM 秘密拼接得到的 IKM、salt、info、HKDF 的 PRK 与派生 AES 密钥，以及实际 nonce、AAD 和加密结果。HKDF 展开使用 [RFC 5869 (2010/05), §2.2–2.3](https://www.rfc-editor.org/rfc/rfc5869.html#section-2.2) 的规则。
-- 在「③ 后量子数字签名」选择现有任意 ML-DSA、SLH 类或 Falcon 参数组，运行后自动打开「参数与计算过程」，展示本轮实际密钥、消息、签名分量及数学验签；「执行摘要」保留长度、原消息和改动消息的验证结论。
-- ML-DSA 展示 n / q / k / l / η / τ / β / γ1 / γ2 / ω，解码本轮 ρ、秘密向量、z、h、挑战；逐层 NTT、矩阵乘积、公开密钥关系、由 z−c·s1 重建的实际掩码 y、承诺和挑战比对。公式对应 [NIST (2024/08), FIPS 204，算法 6–8、23–48](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.204.pdf)。
-- SLH 类展示本轮种子与随机化值 R、摘要和 FORS 叶索引、秘密叶、完整认证路径、WOTS+ 签名/验签链及各层 XMSS 根；全部 12 组参数均可运行。本项目实际调用 `pqcrypto` 的 SPHINCS+ simple 后端，直接签署原始消息，FORS 索引按低位优先读取；与 FIPS 205 的外部消息格式不同，详情会注明这一点。参见 [PQClean SPHINCS+ 后端源码](https://github.com/PQClean/PQClean/tree/master/crypto_sign) 和 [NIST (2024/08), FIPS 205，表 2、附录 A](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.205.pdf)。
-- Falcon 展示 512 / 1024 维参数、实际 nonce、公开多项式 h、密钥关系、压缩签名 s2、SHAKE256 哈希到点、环乘积、恢复 s1 及平方范数检查，全部系数可查看。[Falcon 实现，codec/common/vrfy](https://falcon-sign.info/impl/)
-- 在「④ 实际连接复算」选择前面的深度检测会话，或导入包含实际抓包材料的 JSON 证据包。复算前先严格解析同次握手 Certificate 列表：叶子证书 SPKI 的算法 OID 与公钥字节、证书签名算法、参数长度和 SHA-256 指纹均来自原始 DER。
-- 深度检测会话自动携带服务器交换材料、同次 CertificateVerify、解密记录以及本工具客户端的临时私钥。外部抓包通常缺少秘密，可在 JSON 中补充客户端临时私钥或流量密钥；缺失项会逐项列出，不会生成随机替代值。
-- 复算按类型执行：ML-KEM 解封装 / ECDH 计算并比较共享秘密；用叶子证书 SPKI 公钥验证握手签名以确认服务器掌握对应私钥；用原连接 AEAD 密钥、nonce、AAD 解密记录并检查认证标签及明文一致性。界面同时展示实际输入、计算过程、完整输出 JSON 和总一致性结论。
-- 外部证据 JSON 的顶层为 `session`、`certificates`、`key_exchange`、`handshake_signature`、`encrypted_records`；二进制材料使用 Base64（也支持 `hex:` / `base64:` 前缀）。`same_handshake: false` 时拒绝复算，避免把另一条连接的证书或密文混入。
-- 运行演示时关闭主窗口，会等待当前密码运算完成后自动退出，避免在运算中销毁后台线程。
-- 混合加密与签名页的输入区、演示区之间可以拖动分隔条，计算详情的步骤树与数值区也可调整宽度。完整 Base64 公钥、封装密文、加密密文及签名按需展开。
-- 计算详情按教学用途显示本轮临时随机种子、私钥中间量与共享秘密；只在内存和界面中保留，不自动保存或写入日志，重试前清除上次详情。签名生成仍由原生库执行，数学重放必须与原生验签一致，不一致即报告失败。
-- 详情区明确区分实际解码值、确定性重算值和代数重建值。ML-DSA 的原始 ξ / rnd / ρ′、SPHINCS+ 的 optrand、Falcon 的高斯采样随机流与未接受的重试不由库接口返回，界面不会生成替代值冒充。ECDSA 的等价 nonce 从实际签名和临时私钥反推；RSA-PSS 的实际盐从 EM 中恢复。公开 `sign_hybrid_message` 接口继续只输出公开数据，教学 trace 仅由 demo 接口返回。
-- ML-KEM 使用可记录内部运算的 Python 教学实现，结果与 `pqcrypto==0.3.0` 双向交叉校验；不匹配即报告失败。它用于教学展示，不是恒定时间的生产实现。签名仍调用 `pqcrypto`。测试使用固定版本的 [NIST ACVP keyGen 数据](https://github.com/usnistgov/ACVP-Server/blob/15c0f3deeefbfa8cb6cd32a99e1ca3b738c66bf0/gen-val/json-files/ML-KEM-keyGen-FIPS203/internalProjection.json) 与 [encapDecap 数据](https://github.com/usnistgov/ACVP-Server/blob/ad33b3d9504491767f1aa76382464f3b3fa2359e/gen-val/json-files/ML-KEM-encapDecap-FIPS203/internalProjection.json) 逐字节验证三个参数集。Falcon 的标准状态参见下方 NIST 资料。
+### ④ 实际连接计算复核
+
+- 在第一页完成深度检测，或在第三页加载 / 抓取 TLS 连接，进入第四页点击「刷新检测 / 抓包会话」并选择一条连接。第一页保留最近 10 次检测；第三页的原抓包与主动复测分别展示，复测属于独立连接。
+- 自动导入所选连接的真实 ClientHello / ServerHello、协商组与密码套件、客户端公钥、服务器交换材料和双方完整密文记录。取得解密后的握手时，同时展示原证书、CertificateVerify 签名及签名前的握手转录。公开 JSON 报告携带可重新导入的 `recheck_session`。
+- 第一页的「为第四页保留本次临时秘密（仅内存）」默认勾选。深度检测保留自己客户端实际生成的 ML-KEM / ECDH 临时私钥以及原本计算出的共享秘密，第四页据此重新计算并比较。快速检测或旧报告通常缺少这些材料；不会以新生成的数据补齐。
+- 补充秘密有两种方式：「临时私钥 / 秘密参数」中填写或导入 JSON；或导入 / 粘贴同次连接的 NSS / OpenSSL Key Log。秘密 JSON 保留所选连接的 `session_id`，各字节字段为完整十六进制；Key Log 按 ClientHello 的 `ClientRandom` 匹配。跨会话 JSON、矛盾的秘密或格式错误会明确报错。
+- 常用秘密字段：`kem_private_key` 为原始 ML-KEM 解封装私钥，`ecdh_private_key` 为 X25519 的 32 字节私钥或 P-256 / P-384 的大端私钥标量，`expected_shared_secret` 为原连接记录的完整共享秘密（混合组按实际 TLS 组规定的次序拼接）。缺少比较值时仅显示「已计算，缺少比较值」。
+- Key Log 支持 `SERVER_HANDSHAKE_TRAFFIC_SECRET`、`CLIENT_HANDSHAKE_TRAFFIC_SECRET`、`SERVER_TRAFFIC_SECRET_0`、`CLIENT_TRAFFIC_SECRET_0`。也可填写 JSON 中的 `server/client_handshake/application_traffic_secret`，或对应的 `*_key` 与 `*_iv`。Key Log 能帮助解密和验签，但不能恢复 ML-KEM 解封装私钥。
+- 点击「执行本次连接计算复核」后分别展示三项结果：① 用实际私钥解封装 / 做 ECDH，输出共享秘密并与实际比较值核对；② 根据实际握手转录与证书公钥重新验证 CertificateVerify；③ 用原连接流量秘密派生密钥，按方向、密钥阶段和记录序号构造 nonce，以原记录头作为 AAD 解密并验证认证标签。
+- 「实际输入材料」展示全部导入字节；各项「过程」可展开实际私钥、密文、解封装的消息恢复 / 重加密 / 隐式拒绝、多项式计算、HKDF 中间量、转录摘要、验签输入、AEAD 参数、明文和一致性结论。ML-KEM 数学重算必须与原生解封装输出一致。TLS 步骤采用 [RFC 8446 §4.4、§5、§7](https://www.rfc-editor.org/rfc/rfc8446.html)。
+- 解密支持 TLS_AES_128_GCM_SHA256、TLS_AES_256_GCM_SHA384 和 TLS_CHACHA20_POLY1305_SHA256；在原 Finished 之后切换到应用流量秘密，重置记录序号，并处理已捕获的 KeyUpdate。应用数据同时展示完整十六进制和 UTF-8 内容；认证失败的记录不输出明文。
+- 每项独立显示通过、失败、不支持、缺少参数或尚无比较值。缺少临时私钥、证书、完整转录、流量秘密、Finished 或密文时逐项提示；抓包在完整记录边界结束但缺少 Finished，也不会显示三项全部通过。第一页只读取服务器握手，没有 HTTP 应用数据时，第四页会明确说明仅复核握手 / 控制密文。
+- 当前支持 TLS 1.3 的 ML-KEM-512 / 768 / 1024、X25519、P-256 / P-384 及已实现的混合组；HRR 转录重建、0-RTT 和 TLS 1.2 复核会明确提示限制。PSK 连接须提供原连接的流量秘密。CertificateVerify 通过仅说明握手签名有效，不包含 CA 信任、域名或有效期验证。
+- 切换会话或修改秘密后清除旧结论；刷新同一会话保留已补充参数。秘密及计算中的秘密输出不自动写日志或导出。可分别清空检测与复核材料；关闭窗口时等待当前后台复核完成。
+
 
 ### ⑤ 后量子算法对比
 - 共 13 组代表参数：传统算法包括 X25519、ECDH-P256 / P384、Ed25519、ECDSA-P256 / P384、RSA-PSS-2048 / 3072 和 SM2；后量子算法包括 ML-KEM-768、ML-DSA-65、SLH-DSA-SHA2-128s、Falcon-512。对比用途、公钥字节数、封装密文或签名大小、数学基础与标准状态。
@@ -202,6 +199,8 @@ CryptoAnalysisTool/
     ├── pqc_detect.py        # 抗量子（PQC）检测：主动握手探测 key_share 组、证书层 OID + FIPS 参数长度校验、结论与 JSON 导出
     ├── pqc_demo.py          # 四类后量子算法演示、混合加密、混合签名与传统/PQC 参数对比
     ├── pqc_demo_ui.py       # 后量子算法演示与对比的 Qt 页面
+    ├── pqc_recheck.py       # 真实 TLS 1.3 会话材料、秘密绑定、计算复核及 Key Log 读取
+    ├── pqc_recheck_ui.py    # 第四页：会话选择、秘密补充、实际输入/计算步骤/输出
     ├── mlkem_trace.py       # FIPS 203 教学计算与真实中间量记录
     ├── mlkem_trace_ui.py    # KEM 与签名共用的参数/步骤/完整数值查看器
     ├── ml_dsa_trace.py      # ML-DSA 多项式、签名重建与验签

@@ -24,7 +24,6 @@
 """
 
 from __future__ import annotations
-import base64
 
 import os
 import re
@@ -391,7 +390,6 @@ def _client_share_and_key(group_id: int):
     """
     n = CLIENT_SHARE_SIZES.get(group_id, 32)
     from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import ec
     from cryptography.hazmat.primitives.asymmetric import ec, x25519
 
     def _x():
@@ -923,34 +921,6 @@ def _derive_shared(group_id: int, server_share: bytes, key_handle):
     raise ValueError("不支持的密钥交换组 0x%04X" % group_id)
 
 
-def _replay_private_material(key_handle):
-    """Serialize a generated client private key for same-session replay."""
-    from cryptography.hazmat.primitives import serialization
-    if key_handle[0] == "mlkem":
-        return base64.b64encode(key_handle[1]).decode("ascii")
-    if key_handle[0] == "x25519":
-        raw = key_handle[1].private_bytes(serialization.Encoding.Raw,
-                                          serialization.PrivateFormat.Raw,
-                                          serialization.NoEncryption())
-        return base64.b64encode(raw).decode("ascii")
-    if key_handle[0] == "ec":
-        der = key_handle[1].private_bytes(serialization.Encoding.DER,
-                                          serialization.PrivateFormat.PKCS8,
-                                          serialization.NoEncryption())
-        return base64.b64encode(der).decode("ascii")
-    if key_handle[0] == "hybrid":
-        _, kem_secret, classical_kind, classical_key = key_handle
-        classical = _replay_private_material(
-            ("x25519", classical_key) if classical_kind == "x25519" else ("ec", classical_key))
-        classical_algorithm = ("X25519" if classical_kind == "x25519" else
-                               "P-256" if isinstance(classical_key.curve, ec.SECP256R1)
-                               else "P-384")
-        return {"ecdh_algorithm": classical_algorithm,
-                "kem_private_key": base64.b64encode(kem_secret).decode("ascii"),
-                "ecdh_private_key": classical}
-    raise RuntimeError("cannot serialize this client private key")
-
-
 def _cert_chain_from_certificate(body: bytes):
     """严格解析 TLS 1.3 Certificate 列表，保留同一次握手的全部证书。"""
     if not body:
@@ -1047,7 +1017,7 @@ def _verify_cert_verify(pub, scheme: int, data: bytes, sig: bytes,
 
 
 def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
-                groups=None, log=None) -> dict:
+                groups=None, log=None, retain_secrets=False) -> dict:
     """验证服务器侧 TLS 1.3 握手飞行，不发送客户端 Finished。
 
     与 probe_tls 的区别：这里解密并验证服务器握手飞行 —— 用自己的 ML-KEM 私钥解封装、
@@ -1073,12 +1043,11 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
         "expect_body": 0, "size_ok": None, "hrr": False, "alert": "",
         "finished_verified": False, "cert_verify": {}, "cert_der": None,
         "cert_chain_der": [], "verification_status": "unverified",
-        "verification_error_kind": "",
+        "verification_error_kind": "", "failed_stage": "",
         "cert_subject": "", "cert_issuer": "", "cert_sig_algorithm": "",
         "server_messages": [], "handshake_bytes_sent": 0, "handshake_bytes_recv": 0,
         "offered": ["%s (0x%04X)" % (lookup_group(g)[0], g) for g in groups],
         "client_hello": None, "server_hello": None,
-        "replay_bundle": {"session": {}, "certificates": [], "encrypted_records": []},
         "timings": {"connect_ms": 0.0, "server_hello_ms": 0.0, "verify_ms": 0.0},
     }
     t0 = time.perf_counter()
@@ -1088,6 +1057,7 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
     trace = [{"dir": "→", "kind": "handshake（ClientHello）", "raw": hello}]
 
     sock = None
+    stage = "server_hello"
     try:
         sock = socket.create_connection((host, port), timeout=timeout)
         res["timings"]["connect_ms"] = (time.perf_counter() - t0) * 1000
@@ -1186,28 +1156,27 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
         key_handle = keys.get(res["group_id"])
         if key_handle is None:
             raise RuntimeError("该组的客户端 share 为随机填充，无法完成握手")
+        if retain_secrets:
+            from modules.pqc_recheck import private_parameters
+            res["_recheck_secrets"] = private_parameters(res["group_id"], key_handle)
 
         # ---- 阶段 2：派生握手密钥并解密服务器飞行 ----
+        stage = "key_derivation"
         _log("深度验证：用 %s 私钥与服务器 key_share 计算共享密钥…" % res["group_name"])
         shared = _derive_shared(res["group_id"], server_share, key_handle)
+        if retain_secrets:
+            res["_recheck_secrets"]["expected_shared_secret"] = shared.hex()
         transcript = hello[5:] + sh_msg
         k = _tls13_handshake_keys(shared, sh["cipher_code"], transcript)
         res["shared_secret_len"] = len(shared)
-        algorithms = {0x001D: "X25519", 0x0017: "P-256", 0x0018: "P-384",
-                      0x0200: "ML-KEM-512", 0x0201: "ML-KEM-768",
-                      0x0202: "ML-KEM-1024", 0x11EB: "SecP256r1MLKEM768",
-                      0x11EC: "X25519MLKEM768", 0x11ED: "SecP384r1MLKEM1024",
-                      0x11EE: "X25519MLKEM1024"}
-        res["replay_bundle"].update({
-            "session": {"source": "deep-detection", "host": host, "port": port,
-                        "same_handshake": True, "protocol": "TLS 1.3",
-                        "cipher_suite": res["cipher_suite"]},
-            "key_exchange": {
-                "algorithm": algorithms.get(res["group_id"], res["group_name"]),
-                "server_public_key": base64.b64encode(server_share).decode("ascii"),
-                "private_key": _replay_private_material(key_handle),
-                "expected_shared_secret": base64.b64encode(shared).decode("ascii")}})
+        # Public calculation metadata for the UI/export; retain no secret key bytes.
+        res["key_derivation"] = {
+            "hash_name": k["hash_name"], "aead": k["aead"],
+            "key_len": len(k["server_key"]), "iv_len": len(k["server_iv"]),
+            "finished_key_len": len(k["server_finished_key"]),
+        }
 
+        stage = "server_handshake"
         seq, finished, cv_body, cert_der = 0, None, None, None
         transcript_after_cert = None
         while finished is None:
@@ -1229,27 +1198,19 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
                 trace.append({"dir": "←", "kind": _record_label(rtype, payload),
                               "raw": header + payload})
                 continue
+            # Keep actual ciphertext even if its authentication subsequently fails.
+            record_entry = {"dir": "←", "kind": _record_label(rtype, payload),
+                            "raw": header + payload}
+            trace.append(record_entry)
             pt = _aead_decrypt(k["aead"], k["server_key"],
                                _nonce(k["server_iv"], seq), header, payload)
             seq += 1
-            record_algorithm = ("ChaCha20-Poly1305" if k["aead"] != "aes"
-                                else "AES-128-GCM" if len(k["server_key"]) == 16
-                                else "AES-256-GCM")
-            res["replay_bundle"]["encrypted_records"].append({
-                "algorithm": record_algorithm,
-                "key": base64.b64encode(k["server_key"]).decode("ascii"),
-                "nonce": base64.b64encode(_nonce(k["server_iv"], seq - 1)).decode("ascii"),
-                "aad": base64.b64encode(header).decode("ascii"),
-                "ciphertext": base64.b64encode(payload).decode("ascii"),
-                "expected_plaintext": base64.b64encode(pt).decode("ascii")})
             # TLSInnerPlaintext = content ‖ content_type(1) ‖ 零填充
             pt = pt.rstrip(b"\x00")
             if not pt:
                 continue
             content_type, content = pt[-1], pt[:-1]
-            trace.append({"dir": "←", "kind": _record_label(rtype, payload),
-                          "raw": header + payload, "plain": pt,
-                          "content_type": content_type})
+            record_entry.update(plain=pt, content_type=content_type)
             if content_type != 22:           # 只拼接握手内容
                 continue
             hs_buf += content
@@ -1271,8 +1232,6 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
                     cert_der = chain[0]
                     res["cert_der"] = cert_der
                     res["cert_chain_der"] = chain
-                    res["replay_bundle"]["certificates"] = [
-                        base64.b64encode(item).decode("ascii") for item in chain]
                     transcript_after_cert = transcript
                 elif mt == 15:
                     cv_body = body
@@ -1281,6 +1240,7 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
                     break
 
         # ---- 阶段 3：校验 Finished ----
+        stage = "finished"
         th = hashlib.new(k["hash_name"], transcript).digest()
         expect = _hmac.new(k["server_finished_key"], th, k["hash_name"]).digest()
         res["finished_verified"] = (finished == expect)
@@ -1288,10 +1248,12 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
         if not res["finished_verified"]:
             res["verification_status"] = "failed"
             res["verification_error_kind"] = "invalid"
+            res["failed_stage"] = stage
             res["error"] = "Finished HMAC 校验失败"
 
         # ---- 阶段 4：校验 CertificateVerify（用证书公钥验签） ----
-        if cv_body and cert_der:
+        stage = "certificate_verify"
+        if cv_body is not None and cert_der:
             from cryptography import x509
             from cryptography.exceptions import UnsupportedAlgorithm
             if len(cv_body) < 4:
@@ -1322,13 +1284,10 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
                 "sig_len": len(sig), "verified": ok, "error": err,
                 "error_kind": error_kind,
             }
-            res["replay_bundle"]["handshake_signature"] = {
-                "scheme": "0x%04X" % scheme,
-                "signed_content": base64.b64encode(content).decode("ascii"),
-                "signature": base64.b64encode(sig).decode("ascii")}
             if not ok and res["verification_error_kind"] != "invalid":
                 res["verification_status"] = "unsupported" if error_kind == "unsupported" else "failed"
                 res["verification_error_kind"] = error_kind
+                res["failed_stage"] = stage
                 res["error"] = err
             try:
                 cn = cert.subject.get_attributes_for_oid(x509.NameOID.COMMON_NAME)
@@ -1353,6 +1312,7 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
         res["timings"]["verify_ms"] = (time.perf_counter() - t0) * 1000
     except Exception as e:
         res["error"] = "%s: %s" % (type(e).__name__, e)
+        res["failed_stage"] = stage
         from cryptography.exceptions import InvalidSignature, InvalidTag
         if isinstance(e, (ValueError, InvalidSignature, InvalidTag)):
             res["verification_status"] = "failed"
@@ -1877,7 +1837,7 @@ def _deep_to_probe(deep: dict) -> dict:
 
 def detect(host: str, port: int = 443, timeout: float = 12.0,
            check_cert: bool = True, log=None, mode: str = "deep",
-           cancel_event=None, groups=None) -> dict:
+           cancel_event=None, groups=None, retain_secrets=False) -> dict:
     """对单个目标做完整的抗量子检测，返回报告字典。
 
     mode="deep"（默认）：**深度验证** —— 验证服务器侧 TLS 1.3 握手（ML-KEM 解封装 +
@@ -1922,7 +1882,10 @@ def detect(host: str, port: int = 443, timeout: float = 12.0,
     if mode == "deep":
         _log("深度验证：向 %s:%d 发起 TLS 1.3 握手并验证服务器飞行（ML-KEM 解封装 + ECDH → 派生密钥）…"
              % (host, port))
-        deep = deep_verify(host, port, timeout, log=log, **({"groups": groups} if groups is not None else {}))
+        deep_kwargs = {"groups": groups} if groups is not None else {}
+        if retain_secrets:
+            deep_kwargs["retain_secrets"] = True
+        deep = deep_verify(host, port, timeout, log=log, **deep_kwargs)
         report["deep"] = deep
         if deep.get("ok"):
             _log("深度验证：收到 %s" % "、".join(
@@ -2306,8 +2269,10 @@ def report_to_json(report: dict) -> dict:
             "verified": bool(deep.get("verified")),
             "verification_status": deep.get("verification_status", "unverified"),
             "verification_error_kind": deep.get("verification_error_kind", ""),
+            "failed_stage": deep.get("failed_stage", ""),
             "error": deep.get("error", ""),
             "shared_secret_len": deep.get("shared_secret_len", 0),
+            "key_derivation": deep.get("key_derivation", {}),
             "server_messages": [m.get("name") for m in deep.get("server_messages", [])],
             "finished_verified": deep.get("finished_verified"),
             "certificate_verify": deep.get("cert_verify"),
@@ -2351,6 +2316,8 @@ def report_to_json(report: dict) -> dict:
     out["rows"] = OrderedDict(report_rows(report))
     out["interaction_raw"] = interaction_text(report)
     out["interaction_verbose"] = interaction_text_verbose(report)
+    from modules.pqc_recheck import session_from_report, public_session
+    out["recheck_session"] = public_session(session_from_report(report))
     return out
 
 

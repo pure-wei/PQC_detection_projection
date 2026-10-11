@@ -10,7 +10,7 @@ import threading
 
 from cryptography.hazmat.primitives.asymmetric import ec, x25519
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from pqcrypto.kem import ml_kem_768, ml_kem_1024
 
 from modules import pqc_detect
@@ -75,7 +75,14 @@ def test_classical_result_describes_this_connection_without_global_claim():
     assert "该站点不支持" not in evidence
 
 
-def test_deep_verify_stops_at_finished_before_post_handshake_record():
+@pytest.mark.parametrize("cipher,hash_name,key_len,aead", [
+    (0x1301, "sha256", 16, "aes"),
+    (0x1302, "sha384", 32, "aes"),
+    (0x1303, "sha256", 32, "chacha"),
+])
+@pytest.mark.parametrize("failure", ["", "key_derivation", "server_handshake", "finished",
+                                     "certificate_verify", "certificate_verify_empty"])
+def test_deep_verify_tracks_completed_and_failed_stages(cipher, hash_name, key_len, aead, failure):
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     listener.listen(1)
@@ -114,31 +121,67 @@ def test_deep_verify_stops_at_finished_before_post_handshake_record():
                 server_pub = server_key.public_key().public_bytes(
                     serialization.Encoding.Raw, serialization.PublicFormat.Raw)
                 shared = server_key.exchange(x25519.X25519PublicKey.from_public_bytes(client_pub))
-                exts = (b"\x00\x2b\x00\x02\x03\x04" +
-                        b"\x00\x33\x00\x24\x00\x1d\x00\x20" + server_pub)
+                share = server_pub[:-1] if failure == "key_derivation" else server_pub
+                share_ext = b"\x00\x1d" + len(share).to_bytes(2, "big") + share
+                exts = (b"\x00\x2b\x00\x02\x03\x04" + b"\x00\x33" +
+                        len(share_ext).to_bytes(2, "big") + share_ext)
                 sh_body = (b"\x03\x03" + os.urandom(32) + bytes([len(sid)]) + sid +
-                           b"\x13\x01\x00" + len(exts).to_bytes(2, "big") + exts)
+                           cipher.to_bytes(2, "big") + b"\x00" + len(exts).to_bytes(2, "big") + exts)
                 sh = b"\x02" + len(sh_body).to_bytes(3, "big") + sh_body
                 sh_record = b"\x16\x03\x03" + len(sh).to_bytes(2, "big") + sh
-                keys = pqc_detect._tls13_handshake_keys(shared, 0x1301, hello[5:] + sh)
+                keys = pqc_detect._tls13_handshake_keys(shared, cipher, hello[5:] + sh)
 
                 def encrypted(content, seq):
                     plain = content + b"\x16"
                     rec_header = b"\x17\x03\x03" + (len(plain) + 16).to_bytes(2, "big")
-                    return rec_header + AESGCM(keys["server_key"]).encrypt(
+                    encryptor = AESGCM if aead == "aes" else ChaCha20Poly1305
+                    return rec_header + encryptor(keys["server_key"]).encrypt(
                         pqc_detect._nonce(keys["server_iv"], seq), plain, rec_header)
 
                 ee = b"\x08\x00\x00\x02\x00\x00"
-                digest = hashlib.sha256(hello[5:] + sh + ee).digest()
-                verify_data = hmac.new(keys["server_finished_key"], digest, "sha256").digest()
-                finished = b"\x14\x00\x00\x20" + verify_data
+                flight = ee
+                if failure.startswith("certificate_verify"):
+                    from test_pqc_authenticity import _pqc_cert
+                    cert = _pqc_cert()
+                    cert_entry = len(cert).to_bytes(3, "big") + cert + b"\x00\x00"
+                    cert_body = b"\x00" + len(cert_entry).to_bytes(3, "big") + cert_entry
+                    flight += b"\x0b" + len(cert_body).to_bytes(3, "big") + cert_body
+                    # An authenticated, truncated CertificateVerify must fail at signature parsing.
+                    cv_body = b"" if failure == "certificate_verify_empty" else b"\x09\x05\x00"
+                    flight += b"\x0f" + len(cv_body).to_bytes(3, "big") + cv_body
+                digest = hashlib.new(hash_name, hello[5:] + sh + flight).digest()
+                verify_data = hmac.new(keys["server_finished_key"], digest, hash_name).digest()
+                if failure == "finished":
+                    verify_data = b""
+                finished = b"\x14" + len(verify_data).to_bytes(3, "big") + verify_data
                 extra = b"\x17\x03\x03\x00\x20" + os.urandom(32)
-                conn.sendall(sh_record + encrypted(ee, 0) + encrypted(finished, 1) + extra)
+                encrypted_flight = encrypted(flight, 0)
+                if failure == "server_handshake":
+                    encrypted_flight = encrypted_flight[:-1] + bytes([encrypted_flight[-1] ^ 1])
+                conn.sendall(sh_record + encrypted_flight + encrypted(finished, 1) + extra)
 
     thread = threading.Thread(target=server, daemon=True)
     thread.start()
     result = pqc_detect.deep_verify("127.0.0.1", port, timeout=2, groups=[0x001D])
     thread.join(2)
-    assert result["error"] == ""
-    assert result["finished_verified"] is True
-    assert [m["name"] for m in result["server_messages"]] == ["EncryptedExtensions", "Finished"]
+    expected_stage = "certificate_verify" if failure.startswith("certificate_verify") else failure
+    if failure:
+        assert result["verification_error_kind"] == "invalid"
+        assert result["failed_stage"] == expected_stage
+    else:
+        assert result["error"] == ""
+        assert [m["name"] for m in result["server_messages"]] == ["EncryptedExtensions", "Finished"]
+    assert result["finished_verified"] is (expected_stage in ("", "certificate_verify"))
+    if failure == "finished":
+        assert result["finished_len"] == 0
+    if failure == "key_derivation":
+        assert "key_derivation" not in result
+        return
+    assert result["key_derivation"] == {
+        "hash_name": hash_name, "aead": aead, "key_len": key_len,
+        "iv_len": 12, "finished_key_len": hashlib.new(hash_name).digest_size,
+    }
+    exported = pqc_detect.report_to_json({"deep": result})
+    assert exported["deep_verification"]["key_derivation"] == result["key_derivation"]
+    if failure:
+        assert exported["deep_verification"]["failed_stage"] == expected_stage

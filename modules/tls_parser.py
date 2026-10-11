@@ -1216,6 +1216,7 @@ def analyze_flows(pkts):
         a, ap, b, bp = key
         conv_msgs = []
         flow_proto = ""
+        wire_streams = {}
         for direction, data, base in (("A->B", f["ab"], f["ab_base"]), ("B->A", f["ba"], f["ba_base"])):
             if not data:
                 continue
@@ -1225,6 +1226,7 @@ def analyze_flows(pkts):
             # 跳过网关私有前置报文（同样并入 base 偏移，保证包号/偏移仍准确）
             data, skipped = _skip_preamble(data)
             base += skipped
+            wire_streams[direction] = data
             if not data:
                 continue
             proto, _ = split_proto_records(data)
@@ -1281,6 +1283,8 @@ def analyze_flows(pkts):
             "direction_confident": direction_confident,
             "proto": flow_proto or "TLS",
             "messages": [{k: v for k, v in m.items() if k != "offset"} for m in conv_msgs],
+            "wire": {"client": wire_streams.get(cdir, b""),
+                     "server": wire_streams.get("B->A" if cdir == "A->B" else "A->B", b"")},
         }
 
     overview = OrderedDict()

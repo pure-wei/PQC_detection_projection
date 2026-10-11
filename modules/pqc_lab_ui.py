@@ -152,14 +152,16 @@ class PqcLabTab(QWidget):
         grid.addWidget(QLabel("实验协议"), 4, 0)
         grid.addWidget(self.protocol_combo, 4, 1)
         grid.addWidget(QLabel("TLS 密钥交换"), 4, 2)
-        grid.addWidget(self.group_combo, 4, 3)
+        group_field, self.group_status = self._parameter_field(self.group_combo)
+        grid.addLayout(group_field, 4, 3)
         self.signature_combo, self.classical_combo = QComboBox(), QComboBox()
         self.signature_combo.addItems(tuple(TLS_SIGNATURES))
         self.signature_combo.setCurrentText("ML-DSA-65")
         self.classical_combo.addItems(CLASSICAL_SIGNATURE_VARIANTS)
         self.hybrid_check = QCheckBox("消息混合签名")
         grid.addWidget(QLabel("后量子签名"), 5, 0)
-        grid.addWidget(self.signature_combo, 5, 1)
+        signature_field, self.signature_status = self._parameter_field(self.signature_combo)
+        grid.addLayout(signature_field, 5, 1)
         grid.addWidget(self.hybrid_check, 5, 2)
         grid.addWidget(self.classical_combo, 5, 3)
         for field in (self.protocol_combo, self.group_combo, self.signature_combo, self.classical_combo):
@@ -175,11 +177,6 @@ class PqcLabTab(QWidget):
         grid.addWidget(self.scope_hint, 7, 0, 1, 4)
         root.addWidget(settings)
 
-        cards = QHBoxLayout()
-        self.group_value = self._card(cards, "协议层 · 交换与传输", "等待实测")
-        self.cert_value = self._card(cards, "身份层 · 后量子签名", "等待实测")
-        self.handshake_value = self._card(cards, "真实通信验证", "等待实测")
-        root.addLayout(cards)
         summary = QHBoxLayout()
         self.report_status = QLabel("尚无实测报告")
         self.report_status.setStyleSheet("font-size:16px; font-weight:700; color:#475569;")
@@ -204,12 +201,17 @@ class PqcLabTab(QWidget):
             meta.addWidget(label)
         root.addLayout(meta)
         self.checks_table = QTableWidget(0, 3)
-        self.checks_table.setHorizontalHeaderLabels(["实测检查项目", "结果", "证据摘要"])
+        self.checks_table.setHorizontalHeaderLabels(["实测检查项目", "结果", "运行关键参数与证据"])
         self.checks_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.checks_table.verticalHeader().setVisible(False)
         for column in (0, 1):
             self.checks_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         self.checks_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._row_resize_timer = QTimer(self)
+        self._row_resize_timer.setSingleShot(True)
+        self._row_resize_timer.timeout.connect(self.checks_table.resizeRowsToContents)
+        self.checks_table.horizontalHeader().sectionResized.connect(
+            lambda *_: self._row_resize_timer.start(0))
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(1500)
@@ -247,7 +249,7 @@ class PqcLabTab(QWidget):
         self._configuration_changed()
 
     def _configuration_changed(self):
-        if hasattr(self, "group_value") and not self._record:
+        if hasattr(self, "group_status") and not self._record:
             self._report_stamp = self._stamp()
             self._render_unavailable("实验配置已更改，请启动并实测")
         self._update_addresses()
@@ -280,16 +282,32 @@ class PqcLabTab(QWidget):
         del blockers
 
     @staticmethod
-    def _card(row, title, value):
-        box = QGroupBox(title)
-        layout = QVBoxLayout(box)
-        label = QLabel(value)
-        label.setWordWrap(True)
+    def _parameter_field(combo):
+        layout = QHBoxLayout()
+        layout.setSpacing(6)
+        label = QLabel("待实测")
         label.setTextFormat(Qt.TextFormat.PlainText)
-        label.setStyleSheet("font-size:17px; font-weight:700; color:#1d4ed8; padding:5px;")
+        layout.addWidget(combo, 1)
         layout.addWidget(label)
-        row.addWidget(box, 1)
-        return label
+        return layout, label
+
+    def _show_parameter_results(self, state):
+        """Keep evidence next to the selected values, clearing it when they change."""
+        is_tls = self.protocol_combo.currentData() in ("https", "tls")
+        pending = "实测中" if state == "running" else "未验证" if state == "failed" else "待实测"
+        highlight = ("QComboBox { border:1px solid #16a34a; background:#f0fdf4; font-weight:600; }"
+                     "QComboBox:disabled { color:#166534; background:#f0fdf4; border-color:#16a34a; }")
+        for combo, label, applicable, success in (
+            (self.group_combo, self.group_status, is_tls, "协商成功"),
+            (self.signature_combo, self.signature_status, True, "验签通过"),
+        ):
+            verified = state == "passed" and applicable
+            label.setText(success if verified else pending if applicable else "不适用")
+            color = "#15803d" if verified else "#b45309" if state == "running" and applicable else "#64748b"
+            label.setStyleSheet("color:%s; font-size:11px; font-weight:600;" % color)
+            combo.setStyleSheet(highlight if verified else "")
+        self.classical_combo.setStyleSheet(
+            highlight if state == "passed" and not is_tls and self.hybrid_check.isChecked() else "")
 
     def _choose_openssl(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择支持 PQC 的 OpenSSL 程序")
@@ -460,10 +478,17 @@ class PqcLabTab(QWidget):
 
     def _refresh(self, force_report=False):
         self._record = self._runtime()
+        previous_configuration = (self._selected_profile(), self.tls_port.value())
         self._load_running_profile()
+        # Runtime restoration blocks control signals; unchanged evidence still needs
+        # validation against any newly discovered algorithm selection or target.
+        configuration_changed = previous_configuration != (self._selected_profile(), self.tls_port.value())
+        force_report = force_report or configuration_changed
         self._update_addresses()
         stamp = self._stamp()
-        if (force_report or stamp != self._report_stamp) and not (self._starting and stamp == self._before_start_stamp):
+        if (force_report or stamp != self._report_stamp) and (
+            configuration_changed or not (self._starting and stamp == self._before_start_stamp)
+        ):
             self._report_stamp = stamp
             try:
                 data = json.loads((self.base / "public/evidence.json").read_text(encoding="utf-8"))
@@ -503,8 +528,7 @@ class PqcLabTab(QWidget):
         self._report, self._report_state = None, "unverified"
         self.report_status.setText(message)
         self.report_status.setStyleSheet("font-size:16px; font-weight:700; color:#475569;")
-        for label in (self.group_value, self.cert_value, self.handshake_value):
-            label.setText("等待实测")
+        self._show_parameter_results("unverified")
         self.report_time.setText("报告时间：未提供")
         self.report_target.setText("被测端点：未提供")
         self.openssl_version.setText("OpenSSL：等待实测")
@@ -542,23 +566,15 @@ class PqcLabTab(QWidget):
                                   or valid_target and int(number) != self.tls_port.value()):
             state = "failed"
         self._report, self._report_state = data, state
+        https = any(item.get("id") == "https_get" and item["passed"] for item in checks)
+        communication = ("HTTPS 通信成功" if https else "TLS 握手验证通过") if profile.is_tls else (
+            profile.protocol.upper() + " 消息验签成功")
         title, color = {"running": ("实测进行中…", "#b45309"),
-                        "passed": ("上次实测通过 · " + ("双层后量子验证" if profile.is_tls else "消息签名验证"), "#15803d"),
+                        "passed": ("上次实测通过 · " + communication, "#15803d"),
                         "failed": ("实测未通过或报告存在不一致", "#b91c1c")}[state]
         self.report_status.setText(title + (" · %d/%d 项通过" % (len(checks), len(checks)) if state == "passed" else ""))
         self.report_status.setStyleSheet("font-size:16px; font-weight:700; color:%s;" % color)
-        def value(key):
-            item = summary.get(key)
-            return item if isinstance(item, str) and item else "尚无证据"
-        self.group_value.setText(value("group_name") if profile.is_tls else profile.protocol.upper() + " · 明文签名消息")
-        signature = value("certificate_algorithm") if profile.is_tls else value("signature_algorithm")
-        self.cert_value.setText(signature + (" + " + profile.classical_signature if profile.classical_signature else ""))
-        handshake = summary.get("finished_verified") is True and summary.get("certificate_verify_verified") is True
-        https = any(item.get("id") == "https_get" and item["passed"] for item in checks)
-        self.handshake_value.setText(("握手已验证 · HTTPS 成功" if https else "TLS 握手已验证")
-                                    if state == "passed" and profile.is_tls and handshake else
-                                    "消息验签通过 · 不提供内容加密" if state == "passed" and not profile.is_tls and summary.get("message_signature_verified") is True
-                                    else "结果以逐项检查为准")
+        self._show_parameter_results(state)
         self.report_time.setText("报告时间：" + (timestamp.astimezone().strftime("%Y-%m-%d %H:%M:%S") if valid_time else "无效时间"))
         self.report_target.setText("被测端点：" + (target if isinstance(target, str) else "未提供") + " · " + PROTOCOLS[profile.protocol])
         version = data.get("openssl_version")

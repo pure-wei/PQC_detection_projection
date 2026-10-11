@@ -91,6 +91,70 @@ def evidence():
             "checks": [{"id": "fixture", "label": "显示逻辑测试", "passed": True, "detail": "UI fixture"}]}
 
 
+def test_verification_is_shown_beside_the_selected_parameters_and_clears_on_change(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    public = tmp_path / "public"
+    public.mkdir()
+    (public / "evidence.json").write_text(json.dumps(evidence()))
+    page = lab_page(tmp_path)
+    try:
+        assert getattr(page, "group_status", None) is not None, "协商状态应标在原参数选择处"
+        assert getattr(page, "signature_status", None) is not None, "验签状态应标在原参数选择处"
+        assert page.group_status.text() == "协商成功"
+        assert page.signature_status.text() == "验签通过"
+        assert page.group_status.parentWidget() is page.group_combo.parentWidget()
+        assert page.signature_status.parentWidget() is page.signature_combo.parentWidget()
+        page.group_combo.setCurrentText("SecP256r1MLKEM768")
+        assert page._report_state == "unverified"
+        assert page.group_status.text() == "待实测"
+        assert page.signature_status.text() == "待实测"
+        assert not page.group_combo.styleSheet()
+        assert not page.signature_combo.styleSheet()
+    finally:
+        page.close()
+        app.processEvents()
+
+
+@pytest.mark.parametrize("profile,port", [
+    ({"protocol": "https", "group": "SecP256r1MLKEM768", "signature": "ML-DSA-87",
+      "classical_signature": ""}, 9443),
+    ({"protocol": "https", "group": "X25519MLKEM768", "signature": "ML-DSA-65",
+      "classical_signature": ""}, 9555),
+])
+@pytest.mark.parametrize("starting", [False, True])
+def test_discovered_runtime_configuration_cannot_reuse_cached_success(tmp_path, profile, port, starting):
+    app = QApplication.instance() or QApplication([])
+    public = tmp_path / "public"
+    public.mkdir()
+    report = public / "evidence.json"
+    report.write_text(json.dumps(evidence()))
+    stamp = report.stat().st_mtime_ns
+    page = lab_page(tmp_path)
+    try:
+        assert page._report_state == "passed"
+        page._starting = starting
+        page._before_start_stamp = stamp
+        # A real held service lock lets the page discover a new manager before its first report.
+        with lab.service_lock(tmp_path):
+            (tmp_path / ".runtime/service.json").write_text(json.dumps({
+                "pid": os.getpid(), "port": port, "http_port": 8080,
+                "profile": profile, "message": "本地后量子签名消息实验",
+            }))
+            page._refresh()
+            assert page.group_combo.currentText() == profile["group"]
+            assert page.signature_combo.currentText() == profile["signature"]
+            assert page.tls_port.value() == port
+            assert report.stat().st_mtime_ns == stamp
+            assert page._report_state != "passed"
+            assert page.group_status.text() != "协商成功"
+            assert page.signature_status.text() != "验签通过"
+            assert not page.group_combo.styleSheet()
+            assert not page.signature_combo.styleSheet()
+    finally:
+        page.close()
+        app.processEvents()
+
+
 @pytest.mark.parametrize("protocol,signature,classic", [
     ("https", "ML-DSA-87", ""),
     ("tcp", "Falcon-512", "ECDSA-P256"),
@@ -116,10 +180,12 @@ def test_new_modes_have_real_gui_lifecycle(tmp_path, pqc_openssl, monkeypatch, p
         page.btn_start.click()
         wait_for(app, lambda: page.btn_verify.isEnabled() and page._report_state == "passed", timeout=30)
         assert not page.protocol_combo.isEnabled()
-        assert signature in page.cert_value.text()
+        assert page.signature_combo.currentText() == signature
+        assert page.signature_status.text() == "验签通过"
         if protocol != "https":
-            assert "明文" in page.group_value.text()
-            assert "验签" in page.handshake_value.text()
+            assert page.group_status.text() == "不适用"
+            assert "明文" in page.scope_hint.text()
+            assert "验签" in page.report_status.text()
             assert page.tls_address.text() == protocol + "://127.0.0.1:" + str(page.tls_port.value())
         report = json.loads((tmp_path / "public/evidence.json").read_text())
         assert report["profile"]["protocol"] == protocol
@@ -234,8 +300,10 @@ def test_saved_report_is_displayed_and_inconsistent_success_is_rejected(tmp_path
         page.reload_evidence()
         if fault is None:
             assert "实测通过" in page.report_status.text()
-            assert "X25519MLKEM768" in page.group_value.text()
-            assert "ML-DSA-65" in page.cert_value.text()
+            assert page.group_combo.currentText() == "X25519MLKEM768"
+            assert page.signature_combo.currentText() == "ML-DSA-65"
+            assert page.group_status.text() == "协商成功"
+            assert page.signature_status.text() == "验签通过"
             assert page.checks_table.rowCount() == 1
             assert "9443" in page.report_target.text()
             assert "2026" in page.report_time.text()
@@ -310,7 +378,8 @@ def test_refresh_after_report_is_deleted_clears_success(tmp_path):
         page.reload_evidence()
         assert "实测通过" not in page.report_status.text()
         assert page.checks_table.rowCount() == 0
-        assert page.group_value.text() == "等待实测"
+        assert page.group_status.text() == "待实测"
+        assert page.signature_status.text() == "待实测"
     finally:
         page.close()
         app.processEvents()
@@ -385,8 +454,19 @@ def test_start_open_verify_and_stop_use_real_pqc_service(tmp_path, pqc_openssl, 
         with urlopen(address, timeout=2) as response:
             assert response.status == 200 and "双层抗量子 HTTPS" in response.read().decode()
         assert page.checks_table.rowCount() == 11
-        assert "ML-DSA-65" in page.cert_value.text()
-        assert "X25519MLKEM768" in page.group_value.text()
+        assert page.signature_combo.currentText() == "ML-DSA-65"
+        assert page.group_combo.currentText() == "X25519MLKEM768"
+        assert page.group_status.text() == "协商成功"
+        assert page.signature_status.text() == "验签通过"
+        summary = page._report["summary"]
+        assert summary["shared_secret_len"] == 64
+        assert summary["key_derivation"]["key_len"] == 32
+        assert "64 B" in page.checks_table.item(0, 2).text()
+        assert "32 B" in page.checks_table.item(0, 2).text()
+        assert "12 B" in page.checks_table.item(0, 2).text()
+        assert "48 B" in page.checks_table.item(1, 2).text()
+        assert "3309 B" in page.checks_table.item(2, 2).text()
+        assert "1952 B" in page.checks_table.item(3, 2).text()
         assert str(tls_port) in page.tls_address.text()
         assert str(http_port) in page.http_address.text()
         assert page.btn_verify.isEnabled()

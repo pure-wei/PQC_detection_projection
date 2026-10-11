@@ -224,20 +224,34 @@ def verify_lab(base, openssl, port=8443, *, profile=None, message="本地后量�
         cv = deep.get("cert_verify") or {}
         evidence["summary"] = dict(group_name=transport.get("group_name"), protocol=transport.get("protocol"),
             cipher_suite=transport.get("cipher_suite"), certificate_algorithm=cert.get("sig_algorithm"),
+            shared_secret_len=deep.get("shared_secret_len"), key_derivation=deep.get("key_derivation", {}),
+            finished_len=deep.get("finished_len"),
             certificate_fingerprint_sha256=cert.get("fingerprint_sha256"),
             certificate_public_key_bytes=cert.get("pub_bytes"), certificate_signature_bytes=cert.get("sig_bytes"),
             finished_verified=deep.get("finished_verified", False), certificate_verify_verified=cv.get("verified", False),
             chain_certificates=len(report.get("cert_chain") or []),
             root_certificate_file=root_cert.name, server_certificate_file=leaf_cert.name)
+        key_data = deep.get("key_derivation") or {}
+        exchange_detail = "服务器 key_share %d B（规范 %d B）" % (
+            transport.get("key_share_body", 0), transport.get("expect_body", 0))
+        if key_data:
+            exchange_detail += "；共享秘密 %d B；HKDF-%s，握手密钥 %d B / IV %d B" % (
+                deep["shared_secret_len"], key_data["hash_name"].upper(), key_data["key_len"], key_data["iv_len"])
         check("hybrid_exchange", "真实混合密钥交换及长度校验", transport.get("group_id") == TLS_GROUPS[profile.group]
-              and transport.get("size_ok") is True, str(transport.get("group_name")))
-        check("finished", "服务器 Finished 密码学校验", deep.get("finished_verified") is True, deep.get("error") or "TLS transcript HMAC")
+              and transport.get("size_ok") is True, exchange_detail)
+        finished_detail = "转录 HMAC-%s；verify_data %d B；Finished 密钥 %d B" % (
+            key_data["hash_name"].upper(), deep["finished_len"], key_data["finished_key_len"]
+        ) if key_data and deep.get("finished_len") is not None else (deep.get("error") or "尚未取得 Finished")
+        check("finished", "服务器 Finished 密码学校验", deep.get("finished_verified") is True, finished_detail)
         check("certificate_verify", profile.signature + " CertificateVerify 验签", cv.get("verified") is True
-              and cv.get("scheme") == signature_info["scheme"], json.dumps(cv, ensure_ascii=False))
+              and cv.get("scheme") == signature_info["scheme"],
+              "握手签名方案 %s；签名 %d B%s" % (cv.get("scheme", "未取得"), cv.get("sig_len", 0),
+              "；" + cv["error"] if cv.get("error") else ""))
         check("pqc_chain", "两张 " + profile.signature + " 证书及规范长度", len(report.get("cert_chain") or []) == 2
               and all(c.get("sig_oid") == signature_info["oid"] and c.get("pub_oid") == signature_info["oid"]
                       and c.get("sig_size_ok") is True and c.get("pub_size_ok") is True for c in report.get("cert_chain", [])),
-              "Inspect detector-report.json for per-certificate measurements")
+              "收到 %d 张证书；叶子证书公钥 %s B，证书签名 %s B；逐证书数据见 detector-report.json" % (
+                  len(report.get("cert_chain") or []), cert.get("pub_bytes", "未取得"), cert.get("sig_bytes", "未取得")))
         check("detector", "原项目双层检测通过", report.get("overall_state") == "pqc" and deep.get("verified") is True,
               report.get("overall", ""))
         chain = run(chain_command(base, openssl, profile=profile))

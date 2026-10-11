@@ -80,13 +80,14 @@ def _wait_for(app, predicate, timeout=5):
     assert predicate(), "操作超时"
 
 
-def test_main_window_exposes_demo_and_comparison_pages():
+def test_main_window_exposes_recheck_and_comparison_pages():
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
     tabs = window.centralWidget()
 
     assert isinstance(tabs, QTabWidget)
-    assert any(isinstance(tabs.widget(i), PqcDemoTab) for i in range(tabs.count()))
+    from modules.pqc_recheck_ui import PqcRecheckTab
+    assert isinstance(tabs.widget(3), PqcRecheckTab)
     assert any(isinstance(tabs.widget(i), PqcCompareTab) for i in range(tabs.count()))
     assert tabs.tabText(0) == "① TLS 1.3 后量子检测"
     app.processEvents()
@@ -295,6 +296,76 @@ def test_comparison_page_shows_common_classical_algorithms():
                    for col in range(tab.table.columnCount()))
     app.processEvents()
     tab.close()
+
+
+def _window_with_delayed_recheck(monkeypatch):
+    import threading
+    from modules import pqc_recheck
+    from test_pqc_recheck import wire_fixture, session_and_parameters
+    fixture = wire_fixture()
+    session, parameters = session_and_parameters(fixture)
+    session["_secrets"] = parameters
+    original = pqc_recheck.recheck
+    release = threading.Event()
+
+    def delayed(*args, **kwargs):
+        assert release.wait(10)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(pqc_recheck, "recheck", delayed)
+    window = MainWindow()
+    page = window._pqc_recheck_tab
+    page._session_provider = lambda: [session]
+    page.refresh_sessions()
+    return window, page, release
+
+
+def test_main_window_defers_closing_until_recheck_worker_finishes(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window, demo, release = _window_with_delayed_recheck(monkeypatch)
+    window.show()
+    demo.btn_run.click()
+    assert demo._worker.isRunning()
+    try:
+        assert window.close() is False
+        assert window.isVisible()
+        assert not demo.isEnabled()
+        release.set()
+        _wait_for(app, lambda: not window.isVisible(), timeout=10)
+        assert demo._worker is None
+    finally:
+        release.set()
+        # Even against the broken implementation, drain the worker before Qt
+        # destroys its owner so a failing assertion does not abort pytest.
+        _wait_for(app, lambda: demo._worker is None, timeout=10)
+        window.close()
+
+
+def test_window_closes_when_worker_finishes_before_close_callback_is_connected(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window, demo, release = _window_with_delayed_recheck(monkeypatch)
+    window.show()
+    set_enabled = window.setEnabled
+
+    def finish_during_close(enabled):
+        set_enabled(enabled)
+        if not enabled:
+            # Force the real worker to finish after the running check but
+            # before its finished signal gains the window-close connection.
+            release.set()
+            assert demo._worker.wait(10000)
+
+    monkeypatch.setattr(window, "setEnabled", finish_during_close)
+    demo.btn_run.click()
+    try:
+        assert window.close() is False
+        _wait_for(app, lambda: demo._worker is None, timeout=10)
+        app.processEvents()
+        assert not window.isVisible()
+    finally:
+        release.set()
+        _wait_for(app, lambda: demo._worker is None, timeout=10)
+        window.close()
 
 
 def test_kem_calculation_view_shows_parameters_randomness_and_all_coefficients():
