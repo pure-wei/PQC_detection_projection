@@ -84,7 +84,7 @@ def test_main_window_exposes_detection_and_original_capture_as_separate_sessions
         assert page._sessions[0].get("_secrets")
         assert not page._sessions[1].get("_secrets")
         assert page._sessions[1]["server_records"]
-        assert "kem_private_key" not in (tmp_path / "details.txt").read_text()
+        assert "kem_private_key" not in (tmp_path / "details.txt").read_text(encoding="utf-8")
     finally:
         window.close()
         app.processEvents()
