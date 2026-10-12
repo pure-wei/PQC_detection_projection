@@ -23,6 +23,7 @@ pqc_logs/
 Thumbs.db
 .idea/
 .vscode/
+~$*
 
 # Local PQC lab: generated identities and measured evidence
 pqc_lab/.runtime/
