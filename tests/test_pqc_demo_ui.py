@@ -6,6 +6,8 @@ import datetime
 import json
 import base64
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import QFont, QFontMetrics
@@ -80,7 +82,7 @@ def _wait_for(app, predicate, timeout=5):
     assert predicate(), "操作超时"
 
 
-def test_main_window_exposes_recheck_and_comparison_pages():
+def test_main_window_exposes_recheck_demo_and_comparison_pages():
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
     tabs = window.centralWidget()
@@ -88,7 +90,18 @@ def test_main_window_exposes_recheck_and_comparison_pages():
     assert isinstance(tabs, QTabWidget)
     from modules.pqc_recheck_ui import PqcRecheckTab
     assert isinstance(tabs.widget(3), PqcRecheckTab)
-    assert any(isinstance(tabs.widget(i), PqcCompareTab) for i in range(tabs.count()))
+    assert isinstance(tabs.widget(4), PqcDemoTab)
+    assert isinstance(tabs.widget(5), PqcCompareTab)
+    assert [tabs.tabText(i) for i in range(tabs.count())] == [
+        "① TLS 1.3 后量子检测", "② 本地后量子实验站", "③ 协议分析与抓包",
+        "④ 后量子算法复核", "⑤ 后量子算法演示", "⑥ 后量子算法对比",
+        "⑦ 国密 SM2 / SM3（签名 / 验签 / 加解密）", "⑧ 常用编码转换",
+        "⑨ 证书分析", "⑩ 对称加解密 SM4/AES", "⑪ 摘要 / HMAC",
+    ]
+    demo = tabs.widget(4)
+    assert [demo.pages.tabText(i) for i in range(demo.pages.count())] == [
+        "① ML-KEM 密钥封装", "② 混合密钥交换", "③ 后量子数字签名", "④ 后量子混合签名",
+    ]
     assert tabs.tabText(0) == "① TLS 1.3 后量子检测"
     app.processEvents()
     window.close()
@@ -261,6 +274,69 @@ def test_signature_selector_exposes_all_supported_parameter_sets():
     tab.close()
 
 
+@pytest.mark.parametrize("classical, pq_algorithm", [
+    ("Ed25519", "ML-DSA-44"), ("ECDSA-P384", "Falcon-512"),
+])
+def test_hybrid_signature_button_runs_selected_algorithms_and_tamper_checks(classical, pq_algorithm):
+    from modules import pqc_demo
+
+    app = QApplication.instance() or QApplication([])
+    tab = PqcDemoTab()
+    tab.pages.setCurrentIndex(3)
+    tab.show()
+    app.processEvents()
+    assert tab.message_box.isVisible()
+    assert {tab.hybrid_classical_signature_combo.itemText(i)
+            for i in range(tab.hybrid_classical_signature_combo.count())} == set(pqc_demo.CLASSICAL_SIGNATURE_VARIANTS)
+    assert {tab.hybrid_pq_signature_combo.itemText(i)
+            for i in range(tab.hybrid_pq_signature_combo.count())} == set(pqc_demo.SIGNATURE_VARIANTS)
+    tab.hybrid_classical_signature_combo.setCurrentText(classical)
+    tab.hybrid_pq_signature_combo.setCurrentText(pq_algorithm)
+    tab.message_edit.setPlainText("混合签名界面测试")
+    tab.btn_hybrid_sign.click()
+    _wait_for(app, lambda: tab._worker is None)
+
+    output = tab.hybrid_signature_output.toPlainText()
+    assert "%s + %s" % (classical, pq_algorithm) in output
+    assert "混合验签（AND）：通过" in output
+    assert "改动消息：已拒绝" in output
+    assert "篡改传统签名：已拒绝" in output
+    assert "篡改后量子签名：已拒绝" in output
+    assert tab.hybrid_signature_trace_view.tree.topLevelItemCount()
+    assert "后量子公钥（Base64）" in tab.hybrid_signature_raw_output.toPlainText()
+    assert not tab.hybrid_signature_raw_output.isVisible()
+    tab.hybrid_signature_raw_checkbox.setChecked(True)
+    assert tab.hybrid_signature_raw_output.isVisible()
+    tab.close()
+
+
+def test_hybrid_signature_clears_previous_result_and_recovers_after_failure(monkeypatch):
+    from modules import pqc_demo
+
+    app = QApplication.instance() or QApplication([])
+    tab = PqcDemoTab()
+    tab.btn_hybrid_sign.click()
+    _wait_for(app, lambda: tab._worker is None)
+    assert tab.hybrid_signature_trace_view.tree.topLevelItemCount()
+    tab.message_edit.setPlainText("量" * 1366)
+    tab.btn_hybrid_sign.click()
+    assert "4096" in tab.hybrid_signature_output.toPlainText()
+    assert tab.hybrid_signature_trace_view.tree.topLevelItemCount() == 0
+    assert not tab.hybrid_signature_raw_output.toPlainText()
+
+    def fail(*args):
+        raise RuntimeError("混合签名计算失败")
+
+    monkeypatch.setattr(pqc_demo, "run_hybrid_signature_demo", fail)
+    tab.message_edit.setPlainText("重试")
+    tab.btn_hybrid_sign.click()
+    _wait_for(app, lambda: tab._worker is None)
+    assert "混合签名计算失败" in tab.hybrid_signature_output.toPlainText()
+    assert all(button.isEnabled() for button in (
+        tab.btn_kem, tab.btn_hybrid, tab.btn_sign, tab.btn_hybrid_sign))
+    tab.close()
+
+
 def test_wsl_loads_a_font_with_chinese_glyphs():
     from main import _configure_fonts
 
@@ -271,8 +347,8 @@ def test_wsl_loads_a_font_with_chinese_glyphs():
 
 def test_replay_page_calculates_from_actual_session_material():
     app = QApplication.instance() or QApplication([])
-    tab = PqcDemoTab()
-    tab.pages.setCurrentIndex(3)
+    tab = PqcDemoTab(include_replay=True)
+    tab.pages.setCurrentIndex(4)
     tab.show()
     app.processEvents()
     tab.replay_bundle_edit.setPlainText(_json_bundle(_actual_replay_bundle()))
@@ -362,6 +438,46 @@ def test_window_closes_when_worker_finishes_before_close_callback_is_connected(m
         _wait_for(app, lambda: demo._worker is None, timeout=10)
         app.processEvents()
         assert not window.isVisible()
+    finally:
+        release.set()
+        _wait_for(app, lambda: demo._worker is None, timeout=10)
+        window.close()
+
+
+@pytest.mark.parametrize("finish_during_close", [False, True])
+def test_main_window_waits_for_demo_worker_before_closing(monkeypatch, finish_during_close):
+    import threading
+    from modules import pqc_demo
+
+    app = QApplication.instance() or QApplication([])
+    original = pqc_demo.run_hybrid_signature_demo
+    release = threading.Event()
+
+    def delayed(*args):
+        assert release.wait(10)
+        return original(*args)
+
+    monkeypatch.setattr(pqc_demo, "run_hybrid_signature_demo", delayed)
+    window = MainWindow()
+    demo = window.centralWidget().widget(4)
+    window.show()
+    if finish_during_close:
+        set_enabled = window.setEnabled
+
+        def finish(enabled):
+            set_enabled(enabled)
+            if not enabled:
+                release.set()
+                assert demo._worker.wait(10000)
+
+        monkeypatch.setattr(window, "setEnabled", finish)
+    demo.btn_hybrid_sign.click()
+    try:
+        assert demo._worker.isRunning()
+        assert window.close() is False
+        release.set()
+        _wait_for(app, lambda: not window.isVisible(), timeout=10)
+        assert demo._worker is None
     finally:
         release.set()
         _wait_for(app, lambda: demo._worker is None, timeout=10)

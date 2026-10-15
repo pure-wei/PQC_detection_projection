@@ -47,6 +47,9 @@ class _DemoWorker(QThread):
             elif self.operation == "hybrid":
                 result = pqc_demo.run_hybrid_demo(
                     self.message, self.algorithm, self.classical_algorithm)
+            elif self.operation == "hybrid_sign":
+                result = pqc_demo.run_hybrid_signature_demo(
+                    self.message, self.algorithm, self.classical_algorithm)
             else:
                 result = pqc_demo.run_signature_demo(self.message, self.algorithm)
         except Exception as exc:
@@ -56,18 +59,20 @@ class _DemoWorker(QThread):
 
 
 class PqcDemoTab(QWidget):
-    """Offline PQC demos and replay verification for one actual connection."""
+    """Offline PQC demos, with an optional legacy connection replay page."""
 
-    def __init__(self, parent=None, *, capture_provider=None, session_provider=None):
+    def __init__(self, parent=None, *, capture_provider=None, session_provider=None,
+                 include_replay=False):
         super().__init__(parent)
         self._worker = None
+        self._include_replay = include_replay
         self._capture_provider = capture_provider
         self._session_provider = session_provider
         self._replay_sessions = []
         self._captured_brief = ""
         root = QVBoxLayout(self)
 
-        intro = QLabel("①–③ 为离线算法演示；④ 使用前面同次深度检测或导入证据包中的实际材料复核，缺失秘密会明确列出，不会用随机数据替代。")
+        intro = QLabel("本页现场生成临时公钥 / 私钥，演示密钥封装、混合密钥交换、后量子签名与混合签名，并展示实际参数、计算过程及验证结果。")
         intro.setWordWrap(True)
         root.addWidget(intro)
 
@@ -81,11 +86,12 @@ class PqcDemoTab(QWidget):
         self.btn_import_capture.clicked.connect(self.import_captured_parameters)
         capture_layout.addWidget(self.btn_import_capture)
         root.addWidget(capture_box)
+        capture_box.setVisible(capture_provider is not None)
 
         self.main_splitter = QSplitter(Qt.Orientation.Vertical)
         root.addWidget(self.main_splitter, 1)
 
-        message_box = QGroupBox("输入消息（UTF-8；供混合加密与数字签名使用）")
+        message_box = QGroupBox("输入消息（UTF-8；供混合密钥交换后的加解密与数字签名使用）")
         self.message_box = message_box
         mv = QVBoxLayout(message_box)
         self.message_edit = QPlainTextEdit("你好，后量子密码！")
@@ -152,7 +158,7 @@ class PqcDemoTab(QWidget):
         self.kem_combo.addItems(pqc_demo.KEM_VARIANTS)
         self.kem_combo.setCurrentText("ML-KEM-768")
         hybrid_controls.addWidget(self.kem_combo)
-        self.btn_hybrid = QPushButton("运行混合加密演示")
+        self.btn_hybrid = QPushButton("运行混合密钥交换演示")
         self.btn_hybrid.setObjectName("primary")
         self.btn_hybrid.clicked.connect(lambda: self._start("hybrid"))
         hybrid_controls.addWidget(self.btn_hybrid)
@@ -178,7 +184,7 @@ class PqcDemoTab(QWidget):
         self.hybrid_raw_output.setVisible(False)
         self.hybrid_raw_checkbox.toggled.connect(self.hybrid_raw_output.setVisible)
         hv.addWidget(self.hybrid_raw_output, 1)
-        self.pages.addTab(hybrid, "② 混合加密")
+        self.pages.addTab(hybrid, "② 混合密钥交换")
 
         signing = QWidget()
         sv = QVBoxLayout(signing)
@@ -219,6 +225,55 @@ class PqcDemoTab(QWidget):
         sv.addWidget(self.signature_raw_output, 1)
         self.pages.addTab(signing, "③ 后量子数字签名")
 
+        hybrid_signing = QWidget()
+        hsv = QVBoxLayout(hybrid_signing)
+        hybrid_sign_hint = QLabel("选择传统与后量子签名算法，现场生成两组密钥并对同一消息签名；两份签名均验签通过才接受，同时检查改动消息或任一签名后的拒绝结果。")
+        hybrid_sign_hint.setWordWrap(True)
+        hsv.addWidget(hybrid_sign_hint)
+        hybrid_sign_controls = QHBoxLayout()
+        hybrid_sign_controls.addWidget(QLabel("传统签名"))
+        self.hybrid_classical_signature_combo = QComboBox()
+        self.hybrid_classical_signature_combo.addItems(pqc_demo.CLASSICAL_SIGNATURE_VARIANTS)
+        hybrid_sign_controls.addWidget(self.hybrid_classical_signature_combo)
+        hybrid_sign_controls.addWidget(QLabel("后量子签名"))
+        self.hybrid_pq_signature_combo = QComboBox()
+        self.hybrid_pq_signature_combo.addItems(pqc_demo.SIGNATURE_VARIANTS)
+        self.hybrid_pq_signature_combo.setCurrentText("ML-DSA-65")
+        hybrid_sign_controls.addWidget(self.hybrid_pq_signature_combo)
+        self.btn_hybrid_sign = QPushButton("生成混合签名并验签")
+        self.btn_hybrid_sign.setObjectName("primary")
+        self.btn_hybrid_sign.clicked.connect(lambda: self._start("hybrid_sign"))
+        hybrid_sign_controls.addWidget(self.btn_hybrid_sign)
+        hybrid_sign_controls.addStretch(1)
+        hsv.addLayout(hybrid_sign_controls)
+        hybrid_signature_result = QGroupBox("执行过程与结论")
+        hsr = QVBoxLayout(hybrid_signature_result)
+        self.hybrid_signature_status = QLabel("等待运行")
+        hsr.addWidget(self.hybrid_signature_status)
+        self.hybrid_signature_output = QTextEdit()
+        self.hybrid_signature_output.setReadOnly(True)
+        self.hybrid_signature_output.setPlaceholderText("输入消息并运行，查看两份签名、AND 验签和独立篡改检测结果。")
+        self.hybrid_signature_result_tabs = QTabWidget()
+        self.hybrid_signature_trace_view = CalculationTraceView()
+        self.hybrid_signature_result_tabs.addTab(self.hybrid_signature_output, "执行摘要")
+        self.hybrid_signature_result_tabs.addTab(self.hybrid_signature_trace_view, "参数与计算过程")
+        hsr.addWidget(self.hybrid_signature_result_tabs, 1)
+        hsv.addWidget(hybrid_signature_result, 1)
+        self.hybrid_signature_raw_checkbox = QCheckBox("显示原始数据（Base64）")
+        hsv.addWidget(self.hybrid_signature_raw_checkbox)
+        self.hybrid_signature_raw_output = QPlainTextEdit()
+        self.hybrid_signature_raw_output.setReadOnly(True)
+        self.hybrid_signature_raw_output.setVisible(False)
+        self.hybrid_signature_raw_checkbox.toggled.connect(self.hybrid_signature_raw_output.setVisible)
+        hsv.addWidget(self.hybrid_signature_raw_output, 1)
+        self.pages.addTab(hybrid_signing, "④ 后量子混合签名")
+
+        if include_replay:
+            self._add_replay_page()
+        self.pages.currentChanged.connect(self._sync_message_visibility)
+        self._sync_message_visibility(self.pages.currentIndex())
+
+    def _add_replay_page(self):
         replay = QWidget()
         rv = QVBoxLayout(replay)
         replay_hint = QLabel("选择前面深度检测生成的同次连接材料，或导入抓包证据 JSON；可在下方补充客户端临时私钥、流量密钥和期望明文。复算不会生成替代数据。")
@@ -256,16 +311,15 @@ class PqcDemoTab(QWidget):
         self.replay_result_json.setReadOnly(True)
         self.replay_result_tabs.addTab(self.replay_result_json, "完整输出 JSON")
         rv.addWidget(self.replay_result_tabs, 2)
-        self.pages.addTab(replay, "④ 实际连接复算")
+        self.pages.addTab(replay, "⑤ 实际连接复算")
         self.replay_session_combo.currentIndexChanged.connect(self._load_selected_replay_bundle)
-        self.pages.currentChanged.connect(self._sync_message_visibility)
-        self._sync_message_visibility(self.pages.currentIndex())
 
     def showEvent(self, event):
         super().showEvent(event)
         if self._capture_provider is not None:
             self.import_captured_parameters()
-        self.refresh_replay_sessions()
+        if self._include_replay:
+            self.refresh_replay_sessions()
 
     def refresh_replay_sessions(self):
         self.replay_session_combo.blockSignals(True)
@@ -433,38 +487,45 @@ class PqcDemoTab(QWidget):
         return True
 
     def _sync_message_visibility(self, index):
-        self.message_box.setVisible(index in (1, 2))
+        self.message_box.setVisible(index in (1, 2, 3))
 
     def _calculation_widgets(self, operation):
         return {"kem": (self.kem_trace_view, self.kem_result_tabs),
                 "hybrid": (self.hybrid_trace_view, self.hybrid_result_tabs),
-                "sign": (self.signature_trace_view, self.signature_result_tabs)}[operation]
+                "sign": (self.signature_trace_view, self.signature_result_tabs),
+                "hybrid_sign": (self.hybrid_signature_trace_view,
+                                self.hybrid_signature_result_tabs)}[operation]
 
     def _start(self, operation):
         if self._worker is not None and self._worker.isRunning():
             return
         message = self.message_edit.toPlainText().encode("utf-8")
         outputs = {"kem": self.kem_output, "hybrid": self.hybrid_output,
-                   "sign": self.signature_output}
+                   "sign": self.signature_output,
+                   "hybrid_sign": self.hybrid_signature_output}
         output = outputs[operation]
         view, tabs = self._calculation_widgets(operation)
         view.clear()
         tabs.setCurrentIndex(0)
         {"kem": self.kem_raw_output, "hybrid": self.hybrid_raw_output,
-         "sign": self.signature_raw_output}[operation].clear()
+         "sign": self.signature_raw_output,
+         "hybrid_sign": self.hybrid_signature_raw_output}[operation].clear()
         if operation != "kem" and len(message) > 4096:
             output.setPlainText("输入消息超过 4096 字节（UTF-8）；请缩短后重试。")
             self._set_status(operation, "输入过长", False)
             return
         algorithm = {"kem": self.standalone_kem_combo.currentText(),
                      "hybrid": self.kem_combo.currentText(),
-                     "sign": self.signature_combo.currentText()}[operation]
+                     "sign": self.signature_combo.currentText(),
+                     "hybrid_sign": self.hybrid_pq_signature_combo.currentText()}[operation]
         output.setPlainText("正在执行真实密码运算…")
         self._set_status(operation, "运行中…", None)
         self.btn_kem.setEnabled(False)
         self.btn_hybrid.setEnabled(False)
         self.btn_sign.setEnabled(False)
-        classical_algorithm = self.classical_combo.currentText()
+        self.btn_hybrid_sign.setEnabled(False)
+        classical_algorithm = (self.hybrid_classical_signature_combo.currentText()
+                               if operation == "hybrid_sign" else self.classical_combo.currentText())
         worker = _DemoWorker(operation, message, algorithm,
                              classical_algorithm, self)
         self._worker = worker
@@ -475,7 +536,8 @@ class PqcDemoTab(QWidget):
 
     def _set_status(self, operation, message, success):
         label = {"kem": self.kem_status, "hybrid": self.hybrid_status,
-                 "sign": self.signature_status}[operation]
+                 "sign": self.signature_status,
+                 "hybrid_sign": self.hybrid_signature_status}[operation]
         color = "#166534" if success else "#b91c1c" if success is False else "#475569"
         background = "#dcfce7" if success else "#fee2e2" if success is False else "#e2e8f0"
         label.setText(message)
@@ -483,7 +545,8 @@ class PqcDemoTab(QWidget):
 
     def _show_failure(self, operation, error):
         {"kem": self.kem_output, "hybrid": self.hybrid_output,
-         "sign": self.signature_output}[operation].setPlainText("运行失败：" + error)
+         "sign": self.signature_output,
+         "hybrid_sign": self.hybrid_signature_output}[operation].setPlainText("运行失败：" + error)
         self._set_status(operation, "运行失败", False)
 
     @staticmethod
@@ -506,6 +569,7 @@ class PqcDemoTab(QWidget):
         self.btn_kem.setEnabled(True)
         self.btn_hybrid.setEnabled(True)
         self.btn_sign.setEnabled(True)
+        self.btn_hybrid_sign.setEnabled(True)
         if self._worker is not None:
             self._worker.deleteLater()
             self._worker = None

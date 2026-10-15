@@ -32,7 +32,7 @@ sys.path.insert(0, '.')
 from modules import sm2_sm3, codec, pcap_analysis, cert_analysis, packet_parser
 from modules import sym_crypto, hash_tools, handshake_view
 from modules import pqc_detect, pqc_passive, live_capture
-from modules.pqc_demo_ui import PqcCompareTab
+from modules.pqc_demo_ui import PqcCompareTab, PqcDemoTab
 from modules.pqc_recheck_ui import PqcRecheckTab
 from modules import pqc_recheck
 from modules.pqc_lab_ui import PqcLabTab
@@ -4003,13 +4003,16 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._pcap_tab, "③ 协议分析与抓包")
         self._pqc_recheck_tab = PqcRecheckTab(session_provider=self._recheck_sessions)
         self._recheck_close_pending = False
-        tabs.addTab(self._pqc_recheck_tab, "④ 实际连接计算复核")
-        tabs.addTab(PqcCompareTab(), "⑤ 后量子算法对比")
-        tabs.addTab(Sm2Sm3Tab(), "⑥ 国密 SM2 / SM3（签名 / 验签 / 加解密）")
-        tabs.addTab(CodecTab(), "⑦ 常用编码转换")
-        tabs.addTab(CertTab(), "⑧ 证书分析")
-        tabs.addTab(SymCryptoTab(), "⑨ 对称加解密 SM4/AES")
-        tabs.addTab(HashTab(), "⑩ 摘要 / HMAC")
+        tabs.addTab(self._pqc_recheck_tab, "④ 后量子算法复核")
+        self._pqc_demo_tab = PqcDemoTab()
+        self._demo_close_pending = False
+        tabs.addTab(self._pqc_demo_tab, "⑤ 后量子算法演示")
+        tabs.addTab(PqcCompareTab(), "⑥ 后量子算法对比")
+        tabs.addTab(Sm2Sm3Tab(), "⑦ 国密 SM2 / SM3（签名 / 验签 / 加解密）")
+        tabs.addTab(CodecTab(), "⑧ 常用编码转换")
+        tabs.addTab(CertTab(), "⑨ 证书分析")
+        tabs.addTab(SymCryptoTab(), "⑩ 对称加解密 SM4/AES")
+        tabs.addTab(HashTab(), "⑪ 摘要 / HMAC")
         self._lab_close_pending = False
         open_lab = lambda: tabs.setCurrentWidget(self._pqc_lab_tab)
         detect_tab.open_lab.connect(open_lab)
@@ -4053,17 +4056,19 @@ class MainWindow(QMainWindow):
             self._pcap_tab._cancel_probe()
             event.ignore()
             return
-        recheck = self._pqc_recheck_tab._worker
-        if recheck is not None and recheck.isRunning():
-            if not self._recheck_close_pending:
-                self._recheck_close_pending = True
-                self.setEnabled(False)
-                recheck.finished.connect(self.close)
-                if not recheck.isRunning():
-                    QTimer.singleShot(0, self.close)
-            self.statusBar().showMessage("正在完成当前密码运算，完成后自动关闭…")
-            event.ignore()
-            return
+        for page, pending in ((self._pqc_recheck_tab, "_recheck_close_pending"),
+                              (self._pqc_demo_tab, "_demo_close_pending")):
+            worker = page._worker
+            if worker is not None and worker.isRunning():
+                if not getattr(self, pending):
+                    setattr(self, pending, True)
+                    self.setEnabled(False)
+                    worker.finished.connect(self.close)
+                    if not worker.isRunning():
+                        QTimer.singleShot(0, self.close)
+                self.statusBar().showMessage("正在完成当前密码运算，完成后自动关闭…")
+                event.ignore()
+                return
         if self._pqc_lab_tab.is_busy():
             self._lab_close_pending = True
             self._pqc_lab_tab.request_shutdown()
