@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-16",
+  "command": "QT_QPA_PLATFORM=offscreen python -m pytest -q -rs --junitxml=/tmp/pqc-ecdhe/pytest.xml",
+  "exit_code": 0,
+  "passed": 428,
+  "failed": 0,
+  "skipped": 0,
+  "summary": "428 passed in 71.16s (0:01:11)",
+  "versions": {
+    "PySide6": "6.11.2",
+    "pqcrypto": "0.3.0",
+    "cryptography": "46.0.3",
+    "scapy": "2.7.0",
+    "python-docx": "1.2.0",
+    "pytest": "8.3.3"
+  },
+  "purpose": "ECDHE展示术语统一后的完整回归"
+}

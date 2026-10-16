@@ -4,9 +4,11 @@
 
 本项目已整合 2026-10-07 导入的个人工作：IPsec 抓包解析与 IKE 协商图、后量子检测验证修复、可独立启动的本地 PQC 实验站。合并范围、修复和验证结果见 [个人工作合并分析](docs/2026-10-07-contribution-merge.md)，实验搭建见 [PQC 实验站说明](pqc_lab/README.md)。现有实时抓包、主动复测取消、混合签名和算法计算展示保留。
 
-Linux Conda `code` 环境已更新至 OpenSSL 3.6.5；多协议扩展后完整测试 **351 项通过、无跳过**，包含真实 PQC 握手、HTTPS、TCP/UDP 消息签名、负向验证、并发和实验站界面测试。安装配置见 [code 环境补测记录](docs/2026-10-07-code-pqc-validation.md)，最新实测与截图见 [多协议验证记录](docs/2026-10-07-pqc-multilayer-validation.md)。
+2026-10-07 的历史验证使用 Linux Conda `code` 环境和 OpenSSL 3.6.5，多协议扩展后完整测试 **351 项通过、无跳过**。安装配置见 [code 环境补测记录](docs/2026-10-07-code-pqc-validation.md)，历史实测与截图见 [多协议验证记录](docs/2026-10-07-pqc-multilayer-validation.md)。
 
-**展示本地实验：** 打开主界面，在首页顶部点击「进入本地实验站 →」，然后点击「启动实验并展示网页」。顶部「本地后量子实验站」菜单和「② 本地后量子实验站」页签也可进入。页面支持选择 HTTPS、TLS 握手、TCP/UDP 签名消息、交换组和数字签名，并显示实际通信结果及证据文件，见 [实验站页面说明与截图](docs/2026-10-07-pqc-lab-ui.md)。
+**当前报告与截图（2026-10-16）：** 主窗口采用 1040×900 的紧凑比例，检测工具栏和编码快捷按钮分行排列。[报告10.15.docx](docs/报告10.15.docx) 已更新实际运行截图；原图在 [docs/screenshots](docs/screenshots)，日期、尺寸与 SHA-256 见 [截图清单](docs/evidence/compact-ui-screenshots-2026-10-16.json)。本次完整回归 **428 项通过、无跳过**，见 [测试输出](docs/evidence/compact-ui-pytest-2026-10-16.txt)。修改前的代码、报告和配图统一保存在唯一的上一版归档 [archives/previous.zip](archives/previous.zip)，历史测试证据按原日期保留。
+
+**展示本地实验：** 打开主界面，在首页顶部点击「本地实验站」，然后点击「启动实验并展示网页」。顶部「本地后量子实验站」菜单和「② 本地后量子实验站」页签也可进入。页面支持选择 HTTPS、TLS 握手、TCP/UDP 签名消息、交换组和数字签名，并显示实际通信结果及证据文件，见 [实验站页面说明与截图](docs/2026-10-07-pqc-lab-ui.md)。
 
 ## 一、功能介绍
 
@@ -17,7 +19,7 @@ Linux Conda `code` 环境已更新至 OpenSSL 3.6.5；多协议扩展后完整�
 | ③ 协议分析与抓包 | 导入或现场抓取 pcap；按 TLS 会话并列展示抓包观察与主动后量子复测；保留协议时序图和报文列表 |
 | ④ 后量子算法复核 | 选择检测 / 抓包会话，导入同次连接秘密参数，重算密钥封装、验证握手签名并解密实际报文，展示输入、过程和一致性 |
 | ⑤ 后量子算法演示 | 现场生成临时密钥，运行 ML-KEM 密钥封装、混合密钥交换、后量子签名和后量子混合签名，展示计算过程及篡改检测 |
-| ⑥ 后量子算法对比 | 对照 X25519、ECDH、Ed25519、ECDSA、RSA-PSS、SM2，展示四类后量子算法的用途、公钥与输出大小、数学基础、标准状态 |
+| ⑥ 后量子算法对比 | 对照 X25519、ECDHE、Ed25519、ECDSA、RSA-PSS、SM2，展示四类后量子算法的用途、公钥与输出大小、数学基础、标准状态 |
 | ⑦ 国密 SM2 / SM3 | SM2密钥对生成、SM3 摘要、SM2 签名（SM3withSM2）、验签、公钥加密 / 私钥解密（C1C3C2），多格式消息与文件导入 |
 | ⑧ 常用编码转换 | Base64 / Base64URL / HEX（大小写）/ UTF-8 / URL 编解码，多格式一键互转 |
 | ⑨ 证书分析 | 解析 PEM / DER 证书：版本、序列号、签名算法、签发者、有效期、公钥、指纹、自签名判断，兼容国密 SM2 证书 |
@@ -26,15 +28,15 @@ Linux Conda `code` 环境已更新至 OpenSSL 3.6.5；多协议扩展后完整�
 
 ### ① TLS 1.3 后量子检测
 - 输入域名或 URL（也支持 `host:port`），点击「开始检测」即可对站点做一次**主动握手探测**，分两层下结论，不给出笼统的"安全/不安全"：
-- **检测模式默认是「深度验证」**：验证服务器侧 TLS 1.3 握手 —— 用本方 ML-KEM 私钥解封装服务器 key_share 里的密文、做 ECDH，拼出混合共享密钥；按 RFC 8446 派生握手流量密钥（HKDF-Extract / HKDF-Expand-Label）；解密服务器的加密飞行（EncryptedExtensions / Certificate / CertificateVerify / Finished）；最后校验 Finished 的 HMAC 与 CertificateVerify 的签名。该模式验证服务器身份，不发送客户端 Finished，因此不建立可用于 HTTP 请求的完整连接。
+- **检测模式默认是「深度验证」**：验证服务器侧 TLS 1.3 握手 —— 用本方 ML-KEM 私钥解封装服务器 key_share 里的密文、做 ECDHE，拼出混合共享密钥；按 RFC 8446 派生握手流量密钥（HKDF-Extract / HKDF-Expand-Label）；解密服务器的加密飞行（EncryptedExtensions / Certificate / CertificateVerify / Finished）；最后校验 Finished 的 HMAC 与 CertificateVerify 的签名。该模式验证服务器身份，不发送客户端 Finished，因此不建立可用于 HTTP 请求的完整连接。
   若服务器不支持该流程（例如只支持 TLS 1.2、返回 HelloRetryRequest、或用了我们没提供 key_share 的组），会**自动退回快速证据判定**，并在结论里明确标注「未验证」——两种强度不会混为一谈。需要只看证据时，可把模式切到「快速检测（仅读 ServerHello）」。
   - **传输层（密钥交换）**：构造 ClientHello 时把混合抗量子组 `X25519MLKEM768` / `SecP256r1MLKEM768` 排在前面，后面跟 `X25519` / `secp256r1` 兜底；读 ServerHello 的 `key_share` 扩展，看服务器**实际选了哪个组**——这是直接证据，不是推测。再用 IANA/NIST 长度表交叉校验（`X25519MLKEM768` 的 key_share 体必须是 1124 字节），长度对不上即标为"标识与数据不符"。
   - **证书层（身份认证）**：抓取服务器证书并解析**真实字节**——签名算法 OID、公钥算法 OID、公钥与签名的实际长度，与 FIPS 203/204/205 参数表比对。OID 只是标签，长度不符即"可能伪造"（例如 OID 声称 ML-DSA-65 但公钥只有 256 字节）。
-- 页面顶部有一条按结论着色的**总体判定横幅**（双层算法与服务器握手已验证 / 部分抗量子 / 本次连接未观察到抗量子协商与认证 / 未能判定），下面再分传输层、证书层两张卡片给出证据，详情见表格。单次探测只描述当前连接，不能证明一个站点的所有入口均不支持某算法。
+- 页面顶部有一条按结论着色的**总体判定横幅**（双层算法与服务器握手已验证 / 部分抗量子 / 本次连接未观察到抗量子协商与认证 / 未能判定），下面以 ClientHello、ServerHello 两张卡片给出协商证据，证书与验证步骤见表格。单次探测只描述当前连接，不能证明一个站点的所有入口均不支持某算法。
 - **证书层检测为必选项**：界面上不提供开关（该选项已隐藏），每次检测都会自动抓取并分析服务器证书，保证结论始终是两层合一的完整结论。
 - 检测在后台线程执行，界面不卡顿；结果表格支持右键复制；可导出 JSON（含分层结论与逐项证据）。
-- 页面下方「交互细节」页签只展示**交互框架**：一行一条 TLS 记录，给出方向、记录类型、长度，以及加密记录解密后的长度与所含握手消息名（EncryptedExtensions / Certificate / CertificateVerify / Finished 等），下面是传输层、验证强度、证书层、综合结论的摘要。可与「运行日志」页签切换，两者之间用可拖拽分隔条调整高度。
-- **详细报文自动落盘**：每次检测都会把「交互框架 + 原始报文（逐条 TLS 记录 hex dump，加密记录附解密后明文）+ 逐字段说明」写入 `pqc_logs/pqc_detail_<目标>_<时间戳>.txt`（目录已在 `.gitignore` 中忽略），日志里会打印文件路径；也可用工具栏的「导出详细报文」另存到指定位置。导出 JSON 时同时给出 `interaction_raw`（原始字节）与 `interaction_verbose`（逐字段说明）。
+- 页面下方「证书层 · 密钥计算与验证」表格逐项展示共享秘密派生、服务器握手解密、CertificateVerify、Finished 和证书详情；原始报文及逐字段说明通过「导出完整详情」查看。
+- **详细报文自动落盘**：每次检测都会把「交互框架 + 原始报文（逐条 TLS 记录 hex dump，加密记录附解密后明文）+ 逐字段说明」写入 `pqc_logs/pqc_detail_<目标>_<时间戳>.txt`（目录已在 `.gitignore` 中忽略），页面底部显示文件路径；也可用工具栏的「导出完整详情」另存到指定位置。导出 JSON 时同时给出 `interaction_raw`（原始字节）与 `interaction_verbose`（逐字段说明）。
 - 也可直接把 `.pem / .crt / .cer / .der` 证书文件拖到本页（或点「从证书文件检测…」），只做证书层检测。
 - 使用 `pqcrypto==0.3.0` 现场生成真实 ML-KEM 公钥，用 `cryptography` 生成 ECDHE 公钥，不依赖本机 OpenSSL 支持 ML-KEM。`X25519MLKEM768` 的 share 顺序为 ML-KEM 公钥 ‖ X25519 公钥；`SecP256r1MLKEM768` / `SecP384r1MLKEM1024` 为 ECDHE 公钥 ‖ ML-KEM 公钥。旧版 Kyber 草案标识仅用于识别，不参与主动支持矩阵。
 - ClientHello 同时提供 **ML-DSA / SLH-DSA 抗量子签名算法**（否则只配了抗量子证书的服务器会直接以 alert 40 拒绝握手）；证书抓取优先用 Python ssl，遇到本机 OpenSSL 3.0 不认识的证书签名算法（如 ML-DSA）时**自动回退到 `openssl s_client -showcerts`**（需 OpenSSL 3.5+，会自动在 PATH 与常见安装路径中查找）。
@@ -62,11 +64,11 @@ Linux Conda `code` 环境已更新至 OpenSSL 3.6.5；多协议扩展后完整�
 
 - 在第一页完成深度检测，或在第三页加载 / 抓取 TLS 连接，进入第四页点击「刷新检测 / 抓包会话」并选择一条连接。第一页保留最近 10 次检测；第三页的原抓包与主动复测分别展示，复测属于独立连接。
 - 自动导入所选连接的真实 ClientHello / ServerHello、协商组与密码套件、客户端公钥、服务器交换材料和双方完整密文记录。取得解密后的握手时，同时展示原证书、CertificateVerify 签名及签名前的握手转录。公开 JSON 报告携带可重新导入的 `recheck_session`。
-- 第一页的「为第四页保留本次临时秘密（仅内存）」默认勾选。深度检测保留自己客户端实际生成的 ML-KEM / ECDH 临时私钥以及原本计算出的共享秘密，第四页据此重新计算并比较。快速检测或旧报告通常缺少这些材料；不会以新生成的数据补齐。
+- 第一页的「为第四页保留本次临时秘密（仅内存）」默认勾选。深度检测保留自己客户端实际生成的 ML-KEM / ECDHE 临时私钥以及原本计算出的共享秘密，第四页据此重新计算并比较。快速检测或旧报告通常缺少这些材料；不会以新生成的数据补齐。
 - 补充秘密有两种方式：「临时私钥 / 秘密参数」中填写或导入 JSON；或导入 / 粘贴同次连接的 NSS / OpenSSL Key Log。秘密 JSON 保留所选连接的 `session_id`，各字节字段为完整十六进制；Key Log 按 ClientHello 的 `ClientRandom` 匹配。跨会话 JSON、矛盾的秘密或格式错误会明确报错。
 - 常用秘密字段：`kem_private_key` 为原始 ML-KEM 解封装私钥，`ecdh_private_key` 为 X25519 的 32 字节私钥或 P-256 / P-384 的大端私钥标量，`expected_shared_secret` 为原连接记录的完整共享秘密（混合组按实际 TLS 组规定的次序拼接）。缺少比较值时仅显示「已计算，缺少比较值」。
 - Key Log 支持 `SERVER_HANDSHAKE_TRAFFIC_SECRET`、`CLIENT_HANDSHAKE_TRAFFIC_SECRET`、`SERVER_TRAFFIC_SECRET_0`、`CLIENT_TRAFFIC_SECRET_0`。也可填写 JSON 中的 `server/client_handshake/application_traffic_secret`，或对应的 `*_key` 与 `*_iv`。Key Log 能帮助解密和验签，但不能恢复 ML-KEM 解封装私钥。
-- 点击「执行本次连接计算复核」后分别展示三项结果：① 用实际私钥解封装 / 做 ECDH，输出共享秘密并与实际比较值核对；② 根据实际握手转录与证书公钥重新验证 CertificateVerify；③ 用原连接流量秘密派生密钥，按方向、密钥阶段和记录序号构造 nonce，以原记录头作为 AAD 解密并验证认证标签。
+- 点击「执行本次连接计算复核」后分别展示三项结果：① 用实际私钥解封装 / 做 ECDHE，输出共享秘密并与实际比较值核对；② 根据实际握手转录与证书公钥重新验证 CertificateVerify；③ 用原连接流量秘密派生密钥，按方向、密钥阶段和记录序号构造 nonce，以原记录头作为 AAD 解密并验证认证标签。
 - 「实际输入材料」展示全部导入字节；各项「过程」可展开实际私钥、密文、解封装的消息恢复 / 重加密 / 隐式拒绝、多项式计算、HKDF 中间量、转录摘要、验签输入、AEAD 参数、明文和一致性结论。ML-KEM 数学重算必须与原生解封装输出一致。TLS 步骤采用 [RFC 8446 §4.4、§5、§7](https://www.rfc-editor.org/rfc/rfc8446.html)。
 - 解密支持 TLS_AES_128_GCM_SHA256、TLS_AES_256_GCM_SHA384 和 TLS_CHACHA20_POLY1305_SHA256；在原 Finished 之后切换到应用流量秘密，重置记录序号，并处理已捕获的 KeyUpdate。应用数据同时展示完整十六进制和 UTF-8 内容；认证失败的记录不输出明文。
 - 每项独立显示通过、失败、不支持、缺少参数或尚无比较值。缺少临时私钥、证书、完整转录、流量秘密、Finished 或密文时逐项提示；抓包在完整记录边界结束但缺少 Finished，也不会显示三项全部通过。第一页只读取服务器握手，没有 HTTP 应用数据时，第四页会明确说明仅复核握手 / 控制密文。
@@ -84,7 +86,7 @@ Linux Conda `code` 环境已更新至 OpenSSL 3.6.5；多协议扩展后完整�
 - 输入消息使用 UTF-8，最多 4096 字节；密码运算在后台线程执行，关闭主窗口时等待当前演示结束。
 
 ### ⑥ 后量子算法对比
-- 共 13 组代表参数：传统算法包括 X25519、ECDH-P256 / P384、Ed25519、ECDSA-P256 / P384、RSA-PSS-2048 / 3072 和 SM2；后量子算法包括 ML-KEM-768、ML-DSA-65、SLH-DSA-SHA2-128s、Falcon-512。对比用途、公钥字节数、封装密文或签名大小、数学基础与标准状态。
+- 共 13 组代表参数：传统算法包括 X25519、ECDHE-P256 / P384、Ed25519、ECDSA-P256 / P384、RSA-PSS-2048 / 3072 和 SM2；后量子算法包括 ML-KEM-768、ML-DSA-65、SLH-DSA-SHA2-128s、Falcon-512。对比用途、公钥字节数、封装密文或签名大小、数学基础与标准状态。
 - 表格注明编码口径：EC 公钥使用未压缩点；RSA 公钥使用 SPKI DER，指数为 65537；其余公钥为原始字节。ECDSA 同时列出 DER 签名上限和固定长度的 r‖s 表示；RSA-PSS 的签名长度为模数字节数。参见 [Cryptography EC, 签名与序列化](https://cryptography.io/en/46.0.3/hazmat/primitives/asymmetric/ec/)、[Cryptography RSA, 公钥序列化](https://cryptography.io/en/46.0.3/hazmat/primitives/asymmetric/rsa/) 与 [RFC 8017 (2016/11), §8.1](https://www.rfc-editor.org/rfc/rfc8017.html#section-8.1)。
 - Falcon 签名长度可变，表中数值为近似量；不同用途的输出大小不直接代表安全强度。后量子参数与标准状态的出处见下方参考资料。
 - 参考：[NIST FIPS 203](https://csrc.nist.gov/pubs/fips/203/final)、[FIPS 204](https://csrc.nist.gov/pubs/fips/204/final)、[FIPS 205](https://csrc.nist.gov/pubs/fips/205/final) 和 [NIST 后量子密码标准化状态](https://csrc.nist.gov/projects/post-quantum-cryptography)。

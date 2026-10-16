@@ -276,7 +276,7 @@ def verify_key_exchange(section: dict, certificates: list[dict]) -> dict:
         peer = _hybrid_parts(algorithm, server_material)[0] if _is_hybrid(algorithm) else server_material
         private_key = x25519.X25519PrivateKey.from_private_bytes(private["x25519_private_key"])
         ecdh = private_key.exchange(x25519.X25519PublicKey.from_public_bytes(peer))
-        steps.append({"step": "X25519 ECDH", "peer_public_bytes": len(peer),
+        steps.append({"step": "X25519 ECDHE", "peer_public_bytes": len(peer),
                       "ecdh_secret_sha256": fingerprint(ecdh)})
         if not shared:
             shared = ecdh
@@ -289,7 +289,7 @@ def verify_key_exchange(section: dict, certificates: list[dict]) -> dict:
         private_key = private["ec_private_key"]
         ecdh = private_key.exchange(ec.ECDH(), ec.EllipticCurvePublicKey.from_encoded_point(
             private_key.curve, peer))
-        steps.append({"step": "EC ECDH", "curve": private_key.curve.name,
+        steps.append({"step": "EC ECDHE", "curve": private_key.curve.name,
                       "peer_public_bytes": len(peer), "ecdh_secret_sha256": fingerprint(ecdh)})
         if not shared:
             shared = ecdh

@@ -145,7 +145,7 @@ class PqcDemoTab(QWidget):
 
         hybrid = QWidget()
         hv = QVBoxLayout(hybrid)
-        hint = QLabel("选择 ECDH 曲线与 ML-KEM 参数组，现场生成临时密钥；HKDF-SHA256 派生 AES-256-GCM 密钥，演示加解密和篡改检测。")
+        hint = QLabel("选择 ECDHE 曲线与 ML-KEM 参数组，现场生成临时密钥；HKDF-SHA256 派生 AES-256-GCM 密钥，演示加解密和篡改检测。")
         hint.setWordWrap(True)
         hv.addWidget(hint)
         hybrid_controls = QHBoxLayout()
@@ -616,7 +616,7 @@ class PqcDemoTab(QWidget):
                     data["classical_algorithm"], data["classical_public_key_bytes"]),
                 "ML-KEM 公钥：%d 字节；封装密文：%d 字节" % (
                     data["kem_public_key_bytes"], data["kem_ciphertext_bytes"]),
-                "双方 ECDH 秘密一致：%s" % ("是" if data["ecdh_shared_secret_matches"] else "否"),
+                "双方 ECDHE 秘密一致：%s" % ("是" if data["ecdh_shared_secret_matches"] else "否"),
                 "双方 KEM 秘密一致：%s" % ("是" if data["kem_shared_secret_matches"] else "否"),
                 "② HKDF 派生密钥，AES-GCM 加密后解密",
                 "解密结果：%s" % data["recovered"].decode("utf-8"),

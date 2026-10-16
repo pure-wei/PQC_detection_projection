@@ -366,7 +366,7 @@ def test_comparison_page_shows_common_classical_algorithms():
     app = QApplication.instance() or QApplication([])
     tab = PqcCompareTab()
     names = {tab.table.item(row, 0).text() for row in range(tab.table.rowCount())}
-    assert {"RSA-PSS-2048", "ECDSA-P256", "ECDH-P256", "SM2", "ML-DSA-65"} <= names
+    assert {"RSA-PSS-2048", "ECDSA-P256", "ECDHE-P256", "SM2", "ML-DSA-65"} <= names
     assert not any(tab.table.item(row, col) is None
                    for row in range(tab.table.rowCount())
                    for col in range(tab.table.columnCount()))

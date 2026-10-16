@@ -817,8 +817,8 @@ class CodecTab(QWidget):
         g.addWidget(self.btn_clear, 0, 5)
 
         # 快捷转换按钮
-        quick = QHBoxLayout()
-        for label, src, dst in (
+        quick = QGridLayout()
+        for index, (label, src, dst) in enumerate((
                 ("Base64 → HEX", "base64", "hex_upper"),
                 ("Base64URL → HEX", "base64url", "hex_upper"),
                 ("UTF-8 → HEX", "utf8", "hex_upper"),
@@ -826,11 +826,11 @@ class CodecTab(QWidget):
                 ("HEX → Base64URL", "hex", "base64url"),
                 ("HEX → UTF-8", "hex", "utf8"),
                 ("Base64 → UTF-8", "base64", "utf8"),
-        ):
+        )):
             b = QPushButton(label)
             b.clicked.connect(lambda _=False, s=src, d=dst: self._quick(s, d))
-            quick.addWidget(b)
-        g.addLayout(quick, 1, 0, 1, 5)
+            quick.addWidget(b, index // 4, index % 4)
+        g.addLayout(quick, 1, 0, 1, 6)
         root.addWidget(cfg)
 
         root.addWidget(QLabel("输出："))
@@ -3436,6 +3436,9 @@ class PqcDetectTab(QWidget):
         self.btn_run = QPushButton("开始检测")
         self.btn_run.setObjectName("primary")
         self.btn_run.clicked.connect(self._run)
+        top.addWidget(self.btn_run)
+        tv.addLayout(top)
+        actions = QHBoxLayout()
         self.btn_cert = QPushButton("从证书文件检测…")
         self.btn_cert.clicked.connect(self._pick_cert)
         self.btn_export = QPushButton("导出 JSON")
@@ -3446,10 +3449,11 @@ class PqcDetectTab(QWidget):
         self.btn_clear.clicked.connect(self._clear)
         self.btn_lab = QPushButton("本地实验站")
         self.btn_lab.clicked.connect(self.open_lab.emit)
-        for b in (self.btn_run, self.btn_cert, self.btn_export, self.btn_detail,
+        for b in (self.btn_cert, self.btn_export, self.btn_detail,
                   self.btn_clear, self.btn_lab):
-            top.addWidget(b)
-        tv.addLayout(top)
+            actions.addWidget(b)
+        actions.addStretch(1)
+        tv.addLayout(actions)
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("检测模式"))
         self.mode_combo = QComboBox()
@@ -3458,7 +3462,7 @@ class PqcDetectTab(QWidget):
         self.mode_combo.setCurrentIndex(0)          # 默认深度验证
         self.mode_combo.setMinimumWidth(260)
         self.mode_combo.setToolTip(
-            "深度验证：验证服务器侧 TLS 1.3 握手 —— 用本方 ML-KEM 私钥解封装 + ECDH 派生共享密钥，"
+            "深度验证：验证服务器侧 TLS 1.3 握手 —— 用本方 ML-KEM 私钥解封装 + ECDHE 派生共享密钥，"
             "解密服务器飞行，校验 Finished 与 CertificateVerify 签名。\n"
             "若服务器不支持该流程（如仅 TLS 1.2），会自动退回快速证据判定，并在结论中标注「未验证」。")
         mode_row.addWidget(self.mode_combo)
@@ -3466,11 +3470,12 @@ class PqcDetectTab(QWidget):
         self.record_secrets_check.setChecked(True)
         self.record_secrets_check.setToolTip("深度检测保留本次客户端的临时私钥和共享秘密，供实际连接复核；JSON / 日志不会导出秘密。")
         mode_row.addWidget(self.record_secrets_check)
+        mode_row.addStretch(1)
+        tv.addLayout(mode_row)
         hint = QLabel("深度验证服务器侧握手；完整原始报文自动保存，可拖入证书单独检测。")
         hint.setWordWrap(True)
         hint.setStyleSheet("color:#78909C; font-size:11px;")
-        mode_row.addWidget(hint, 1)
-        tv.addLayout(mode_row)
+        tv.addWidget(hint)
         root.addWidget(target_box)
 
         # 综合结论横幅
@@ -3559,6 +3564,7 @@ class PqcDetectTab(QWidget):
         ev.setStyleSheet("color:#4b5563; font-size:12px;")
         v.addLayout(head)
         v.addWidget(ev)
+        v.addStretch(1)
         return card, badge, ev
 
     def _log(self, msg):
@@ -3702,13 +3708,13 @@ class PqcDetectTab(QWidget):
 
         gid = deep.get("group_id") or transport.get("group_id")
         if gid in (0x11EC, 0x11EE):
-            exchange = "ML-KEM 解封装与 ECDH，按 ML-KEM ‖ ECDH 拼接"
+            exchange = "ML-KEM 解封装与 ECDHE，按 ML-KEM ‖ ECDHE 拼接"
         elif gid in (0x11EB, 0x11ED):
-            exchange = "ECDH 与 ML-KEM 解封装，按 ECDH ‖ ML-KEM 拼接"
+            exchange = "ECDHE 与 ML-KEM 解封装，按 ECDHE ‖ ML-KEM 拼接"
         elif gid in (0x0200, 0x0201, 0x0202):
             exchange = "ML-KEM 解封装"
         else:
-            exchange = "ECDH" if gid in (0x0017, 0x0018, 0x0019, 0x001D) else "所选组的密钥交换计算"
+            exchange = "ECDHE" if gid in (0x0017, 0x0018, 0x0019, 0x001D) else "所选组的密钥交换计算"
         key_data = "%s：用临时私钥与服务器 key_share 做%s，得到 %d B 共享秘密。" % (
             deep.get("group_name") or transport.get("group_name") or "—",
             exchange, deep["shared_secret_len"])
@@ -3991,7 +3997,8 @@ class MainWindow(QMainWindow):
     def __init__(self, *, pqc_lab_base=None):
         super().__init__()
         self.setWindowTitle(APP_TITLE)
-        self.resize(1220, 860)
+        # A near-square window keeps report screenshots readable at A4 width.
+        self.resize(1040, 900)
 
         tabs = QTabWidget()
         detect_tab = PqcDetectTab()

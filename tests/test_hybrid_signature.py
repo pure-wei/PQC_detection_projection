@@ -144,13 +144,13 @@ def test_hybrid_signing_requires_byte_messages():
 
 def test_classical_comparison_includes_size_encoding_and_usage():
     rows = {row["name"]: row for row in pqc_demo.comparison_rows()}
-    assert {"X25519", "Ed25519", "ECDH-P256", "ECDH-P384", "ECDSA-P256",
+    assert {"X25519", "Ed25519", "ECDHE-P256", "ECDHE-P384", "ECDSA-P256",
             "ECDSA-P384", "RSA-PSS-2048", "RSA-PSS-3072", "SM2"} <= rows.keys()
     assert "SPKI DER" in rows["RSA-PSS-2048"]["public_size"]
     assert "294" in rows["RSA-PSS-2048"]["public_size"]
     assert "256 字节签名" in rows["RSA-PSS-2048"]["output_size"]
     assert "DER" in rows["ECDSA-P256"]["output_size"]
-    assert "共享秘密" in rows["ECDH-P256"]["output_size"]
+    assert "共享秘密" in rows["ECDHE-P256"]["output_size"]
     assert "签名" in rows["SM2"]["kind"]
 
 

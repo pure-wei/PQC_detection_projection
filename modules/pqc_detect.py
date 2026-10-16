@@ -55,7 +55,7 @@ PQC_GROUP_IDS = {
     0x0200: "MLKEM512",
     0x0201: "MLKEM768",
     0x0202: "MLKEM1024",
-    # 混合组：经典 ECDH + ML-KEM（TLS 1.3 事实标准）
+    # 混合组：经典 ECDHE + ML-KEM（TLS 1.3 事实标准）
     0x11EB: "SecP256r1MLKEM768",
     0x11EC: "X25519MLKEM768",
     0x11ED: "SecP384r1MLKEM1024",
@@ -117,7 +117,7 @@ KEY_SHARE_BODY_SIZES = {
 }
 
 #: 本工具 ClientHello 中提供的 key_share 数据长度
-#: （X25519/ECDH 部分用 cryptography，ML-KEM 部分用 pqcrypto 生成真实公钥）
+#: （X25519/ECDHE 部分用 cryptography，ML-KEM 部分用 pqcrypto 生成真实公钥）
 CLIENT_SHARE_SIZES = {
     0x0017: 65,          # P-256 未压缩点
     0x0018: 97,          # P-384 未压缩点
@@ -386,7 +386,7 @@ def _client_share_and_key(group_id: int):
     返回 (share_bytes, key_handle)：
       key_handle 为 None（仅旧版未实现组使用随机填充）或
       ("x25519", priv) / ("ec", priv) / ("mlkem", priv) / ("hybrid", kem_priv, "x25519"|"ec", ec_priv)
-    深度验证需要这些私钥来验证服务器握手（ML-KEM 解封装 + ECDH）。
+    深度验证需要这些私钥来验证服务器握手（ML-KEM 解封装 + ECDHE）。
     """
     n = CLIENT_SHARE_SIZES.get(group_id, 32)
     from cryptography.hazmat.primitives import serialization
@@ -1021,7 +1021,7 @@ def deep_verify(host: str, port: int = 443, timeout: float = 12.0,
     """验证服务器侧 TLS 1.3 握手飞行，不发送客户端 Finished。
 
     与 probe_tls 的区别：这里解密并验证服务器握手飞行 —— 用自己的 ML-KEM 私钥解封装、
-    ECDH 算出共享密钥，按 RFC 8446 派生握手密钥，解密服务器的加密飞行，
+    ECDHE 算出共享密钥，按 RFC 8446 派生握手密钥，解密服务器的加密飞行，
     并校验 Finished（HMAC）与 CertificateVerify（用证书公钥验签）。
     结论从"服务器声明"升级为"密码学确认"。
     """
@@ -1841,7 +1841,7 @@ def detect(host: str, port: int = 443, timeout: float = 12.0,
     """对单个目标做完整的抗量子检测，返回报告字典。
 
     mode="deep"（默认）：**深度验证** —— 验证服务器侧 TLS 1.3 握手（ML-KEM 解封装 +
-    ECDH → 派生握手密钥 → 解密服务器飞行 → 校验 Finished 与 CertificateVerify），
+    ECDHE → 派生握手密钥 → 解密服务器飞行 → 校验 Finished 与 CertificateVerify），
     结论是密码学确认的；握手未走完时自动退回快速证据判定并明确标注"未验证"。
     mode="fast"：只读 ServerHello 的 key_share 做证据判定（不完成握手）。
     """
@@ -1880,7 +1880,7 @@ def detect(host: str, port: int = 443, timeout: float = 12.0,
     # ---- 传输层 ----
     probe = None
     if mode == "deep":
-        _log("深度验证：向 %s:%d 发起 TLS 1.3 握手并验证服务器飞行（ML-KEM 解封装 + ECDH → 派生密钥）…"
+        _log("深度验证：向 %s:%d 发起 TLS 1.3 握手并验证服务器飞行（ML-KEM 解封装 + ECDHE → 派生密钥）…"
              % (host, port))
         deep_kwargs = {"groups": groups} if groups is not None else {}
         if retain_secrets:
@@ -2449,7 +2449,7 @@ def interaction_text_verbose(report: dict) -> str:
             add("  结果               未完成：%s" % (deep.get("error") or "未知原因"))
             add("  说明               已自动退回「仅 ServerHello 证据」判定，结论标注为未验证")
         else:
-            add("  共享密钥           %d 字节（我们的 ML-KEM 私钥解封装 + ECDH 得到）"
+            add("  共享密钥           %d 字节（我们的 ML-KEM 私钥解封装 + ECDHE 得到）"
                 % deep.get("shared_secret_len", 0))
             add("  密钥派生           HKDF-Extract/Expand-Label 按 RFC 8446 派生握手流量密钥")
             add("  服务器加密飞行     %s" % "、".join(
@@ -2666,7 +2666,7 @@ def interaction_outline(report: dict) -> str:
         rows.append(("验证强度", "已验证服务器握手：Finished + CertificateVerify 校验通过"
                      if t.get("verified") else "仅 ServerHello 证据（服务器握手未验证）"))
         if t.get("verified"):
-            rows.append(("共享密钥", "%d 字节（ML-KEM 解封装 + ECDH）"
+            rows.append(("共享密钥", "%d 字节（ML-KEM 解封装 + ECDHE）"
                          % t.get("shared_secret_len", 0)))
             rows.append(("Finished", "verify_data %d 字节，HMAC 校验%s" % (
                 deep.get("finished_len", 0),

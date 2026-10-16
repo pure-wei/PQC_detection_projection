@@ -190,7 +190,7 @@ def _parse_client_key_exchange(body: bytes) -> OrderedDict:
         return d
     b0 = body[0]
     if b0 == len(body) - 1 and len(body) >= 32:
-        d["交换类型"] = "ECDHE 临时公钥 (ECDH Yc)"
+        d["交换类型"] = "ECDHE 临时公钥 (ECDHE Yc)"
         d["公钥长度"] = "%d 字节" % b0
         d["客户端临时公钥"] = _fmt_hex(body[1:], 96)
         if b0 == 65:

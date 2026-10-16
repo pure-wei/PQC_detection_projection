@@ -1,0 +1,231 @@
+{
+  "captured_at": "2026-10-16T11:08:43+08:00",
+  "window_logical_pixels": [
+    1040,
+    900
+  ],
+  "device_pixel_ratio": 2,
+  "ui_font": "Microsoft YaHei UI",
+  "figures": {
+    "compact-main-window.png": {
+      "path": "docs/screenshots/compact-main-window.png",
+      "pixels": [
+        2080,
+        1800
+      ],
+      "sha256": "3cdfd36acd7ae45d70aff2770e9b2dd3204657c71dc2ceb116b1c5d58577df5a",
+      "source": "本次真实主动检测；1040×900默认窗口"
+    },
+    "compact-active-deep-validation.png": {
+      "path": "docs/screenshots/compact-active-deep-validation.png",
+      "pixels": [
+        2076,
+        1640
+      ],
+      "sha256": "cea47936b166d6a1a11db35ba72b4aef82e6f152f776c1f2164780ffbe9e38f7",
+      "session_id": "ba4ab819380d753e5ac68905cf0e39616979e9a3a1eb2d7467954ac50b562cc4"
+    },
+    "compact-three-rechecks.png": {
+      "path": "docs/screenshots/compact-three-rechecks.png",
+      "pixels": [
+        2040,
+        924
+      ],
+      "sha256": "c978f4cd20892d82e9fb2a20088865730ba532a1acbd1716ae3414bba8d4cc9a",
+      "states": {
+        "exchange": "passed",
+        "signature": "passed",
+        "records": "passed"
+      },
+      "session_id": "ba4ab819380d753e5ac68905cf0e39616979e9a3a1eb2d7467954ac50b562cc4"
+    },
+    "compact-mlkem-decapsulation.png": {
+      "path": "docs/screenshots/compact-mlkem-decapsulation.png",
+      "pixels": [
+        1996,
+        780
+      ],
+      "sha256": "b944c4a3cc596d9fbb7fc9216c51eb99414fdee928e743644a4b8ac324d39ccd",
+      "session_id": "ba4ab819380d753e5ac68905cf0e39616979e9a3a1eb2d7467954ac50b562cc4"
+    },
+    "compact-missing-finished.png": {
+      "path": "docs/screenshots/compact-missing-finished.png",
+      "pixels": [
+        2040,
+        924
+      ],
+      "sha256": "9b3819238efeb9f7e8f746e937463874a2ea6f33c9104f709ce66bc530d44ef8",
+      "records": "missing",
+      "transform": "删除真实服务器最后一条Finished记录"
+    },
+    "compact-session-secret-format.png": {
+      "path": "docs/screenshots/compact-session-secret-format.png",
+      "pixels": [
+        2076,
+        1640
+      ],
+      "sha256": "7d22ae769959204896735262fd26d0fc190ebc896b48f4383d8fb8223267ab82",
+      "format_example": true,
+      "no_secret_values": true
+    },
+    "compact-keylog-format.png": {
+      "path": "docs/screenshots/compact-keylog-format.png",
+      "pixels": [
+        2076,
+        1640
+      ],
+      "sha256": "4149b821ae226988404fc1041c605976f66b49f64829e9de66139d57e787e9ca",
+      "format_example": true,
+      "no_secret_values": true
+    },
+    "compact-keylog-https-replay.png": {
+      "path": "docs/screenshots/compact-keylog-https-replay.png",
+      "pixels": [
+        2040,
+        924
+      ],
+      "sha256": "261a8f8b16eda44c1262d739ded34fdf090a94ef6fba5e31c5579ff92b35508b",
+      "exchange": "missing",
+      "signature": "passed",
+      "records": "passed",
+      "client_request_verified": true,
+      "server_page_verified": true,
+      "session_id": "bff2f4c8f3af0eb6a853af1c70ebcf1af9f78f60962610826bfdb49e87dfdbbd"
+    },
+    "compact-tampered-ciphertext.png": {
+      "path": "docs/screenshots/compact-tampered-ciphertext.png",
+      "pixels": [
+        2040,
+        924
+      ],
+      "sha256": "e4d15784b8477ee58adf49abfb870ca13441ccca4d3cdab02283dae518721a34",
+      "records": "failed",
+      "transform": "翻转真实HTTPS最后一个密文字节"
+    },
+    "compact-passive-and-active.png": {
+      "path": "docs/screenshots/compact-passive-and-active.png",
+      "pixels": [
+        2040,
+        338
+      ],
+      "sha256": "aa6911dac60cc8ad31c79ddfe4c4db08c1415a18fb809d7f4ee5a1cfc2cf9a85",
+      "source": "真实TLS载荷，TCP/IP头为GUI导入而重建；主动复测是另一连接"
+    },
+    "compact-mlkem-demo.png": {
+      "path": "docs/screenshots/compact-mlkem-demo.png",
+      "pixels": [
+        2080,
+        1800
+      ],
+      "sha256": "470af5a37cf38d6b07e0e5b68d0c3e1441ba040fb2bbd2d2a39d875120d958ca",
+      "source": "本次ML-KEM-768真实算法演示"
+    },
+    "compact-lab-https.png": {
+      "path": "docs/screenshots/compact-lab-https.png",
+      "pixels": [
+        2076,
+        1960
+      ],
+      "sha256": "e7ad6003151fa82076194e28d2844ff5dd3ba10a55f086f800739a913022c99b",
+      "checks": 11,
+      "profile": {
+        "protocol": "https",
+        "group": "X25519MLKEM768",
+        "signature": "ML-DSA-65",
+        "classical_signature": ""
+      }
+    },
+    "compact-lab-tls.png": {
+      "path": "docs/screenshots/compact-lab-tls.png",
+      "pixels": [
+        2076,
+        1960
+      ],
+      "sha256": "91626006d50ccac0d1ed7687e337cf2815f6677947e3a7c51d4637dae8d990fb",
+      "checks": 11,
+      "profile": {
+        "protocol": "tls",
+        "group": "SecP256r1MLKEM768",
+        "signature": "ML-DSA-44",
+        "classical_signature": ""
+      }
+    },
+    "compact-lab-tcp.png": {
+      "path": "docs/screenshots/compact-lab-tcp.png",
+      "pixels": [
+        2076,
+        1640
+      ],
+      "sha256": "064a16d05bdbf4c2dcbf304fd8ccbbe044ba5614d7011804299ca377cf302c18",
+      "checks": 9,
+      "profile": {
+        "protocol": "tcp",
+        "group": "X25519MLKEM768",
+        "signature": "Falcon-512",
+        "classical_signature": "ECDSA-P256"
+      }
+    },
+    "compact-lab-udp.png": {
+      "path": "docs/screenshots/compact-lab-udp.png",
+      "pixels": [
+        2076,
+        1640
+      ],
+      "sha256": "f5409ee4939b646151fcd112b0259757e12b706f7b0fdbc221a472f51ccf082b",
+      "checks": 7,
+      "profile": {
+        "protocol": "udp",
+        "group": "X25519MLKEM768",
+        "signature": "SLH-DSA-SHA2-256f",
+        "classical_signature": ""
+      }
+    }
+  },
+  "experiments": {
+    "https": {
+      "profile": {
+        "protocol": "https",
+        "group": "X25519MLKEM768",
+        "signature": "ML-DSA-65",
+        "classical_signature": ""
+      },
+      "status": "passed",
+      "checks": 11,
+      "source": "docs/evidence/compact-ui-https-2026-10-16.json"
+    },
+    "tls": {
+      "profile": {
+        "protocol": "tls",
+        "group": "SecP256r1MLKEM768",
+        "signature": "ML-DSA-44",
+        "classical_signature": ""
+      },
+      "status": "passed",
+      "checks": 11,
+      "source": "docs/evidence/compact-ui-tls-2026-10-16.json"
+    },
+    "tcp": {
+      "profile": {
+        "protocol": "tcp",
+        "group": "X25519MLKEM768",
+        "signature": "Falcon-512",
+        "classical_signature": "ECDSA-P256"
+      },
+      "status": "passed",
+      "checks": 9,
+      "source": "docs/evidence/compact-ui-tcp-2026-10-16.json"
+    },
+    "udp": {
+      "profile": {
+        "protocol": "udp",
+        "group": "X25519MLKEM768",
+        "signature": "SLH-DSA-SHA2-256f",
+        "classical_signature": ""
+      },
+      "status": "passed",
+      "checks": 7,
+      "source": "docs/evidence/compact-ui-udp-2026-10-16.json"
+    }
+  },
+  "services_stopped": true
+}

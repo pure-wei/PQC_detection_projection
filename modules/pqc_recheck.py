@@ -279,14 +279,14 @@ def verify_exchange(session, parameters):
             else:
                 curve = ec.SECP384R1() if group in (0x0018, 0x11ED) else ec.SECP256R1()
                 if len(raw) != (curve.key_size + 7) // 8:
-                    raise ValueError("ECDH 临时私钥长度不符")
+                    raise ValueError("ECDHE 临时私钥长度不符")
                 private = ec.derive_private_key(int.from_bytes(raw, "big"), curve)
                 own_pub = private.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
                 classic = private.exchange(ec.ECDH(), ec.EllipticCurvePublicKey.from_encoded_point(curve, ec_pub))
             if ec_client and own_pub != ec_client:
-                raise ValueError("ECDH 临时私钥与本次 ClientHello 公钥不匹配")
+                raise ValueError("ECDHE 临时私钥与本次 ClientHello 公钥不匹配")
             out["ecdh_shared_secret"] = classic.hex()
-            steps.append(_step("ECDH 重算", "K_ECDH = ECDH(客户端临时私钥, 服务器临时公钥)", private_key=raw,
+            steps.append(_step("ECDHE 重算", "K_ECDHE = ECDHE(客户端临时私钥, 服务器临时公钥)", private_key=raw,
                                peer_public_key=ec_pub, shared_secret=classic))
             secret = secret + classic if group in (0x11EC, 0x11EE) else classic + secret
         out["shared_secret"] = secret.hex()

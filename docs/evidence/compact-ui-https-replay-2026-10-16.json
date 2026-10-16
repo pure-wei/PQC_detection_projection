@@ -1,0 +1,10 @@
+{
+  "session_id": "bff2f4c8f3af0eb6a853af1c70ebcf1af9f78f60962610826bfdb49e87dfdbbd",
+  "exchange": "missing",
+  "signature": "passed",
+  "records": "passed",
+  "client_request_verified": true,
+  "server_page_verified": true,
+  "record_count": 11,
+  "source": "本地OpenSSL真实HTTPS连接的双向TLS字节；KeyLog仅用于内存复核，不保存到项目"
+}

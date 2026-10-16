@@ -44,7 +44,7 @@ def _row(page, step):
 
 
 @pytest.mark.parametrize("group,present,absent", [
-    (0x001D, "ECDH", "ML-KEM"), (0x0201, "ML-KEM", "ECDH"),
+    (0x001D, "ECDHE", "ML-KEM"), (0x0201, "ML-KEM", "ECDHE"),
 ])
 def test_calculation_description_uses_negotiated_group(page, group, present, absent):
     page._fill_compact_report(_report(group, shared_secret_len=32))

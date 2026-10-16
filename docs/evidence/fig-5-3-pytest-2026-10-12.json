@@ -1,0 +1,33 @@
+{
+  "versions": [
+    "2026-10-12T16:20:52+08:00",
+    "Python 3.10.19",
+    "OpenSSL 3.6.5 29 Sep 2026 (Library: OpenSSL 3.6.5 29 Sep 2026)",
+    "pytest 9.1.1",
+    "pqcrypto 0.3.0",
+    "cryptography 48.0.0",
+    "PySide6 6.11.2"
+  ],
+  "runs": [
+    {
+      "label": "复核定向测试",
+      "command": "$ QT_QPA_PLATFORM=offscreen python -m pytest tests/test_pqc_recheck.py tests/test_pqc_recheck_ui.py -q -rs",
+      "exit_code": 0,
+      "summary": "36 passed in 1.11s",
+      "passed": 36,
+      "skipped": 0,
+      "failed": 0,
+      "error": 0
+    },
+    {
+      "label": "完整回归",
+      "command": "$ QT_QPA_PLATFORM=offscreen python -m pytest -q -rs",
+      "exit_code": 0,
+      "summary": "423 passed in 69.55s (0:01:09)",
+      "passed": 423,
+      "skipped": 0,
+      "failed": 0,
+      "error": 0
+    }
+  ]
+}

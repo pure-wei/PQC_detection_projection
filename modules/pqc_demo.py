@@ -89,7 +89,7 @@ def run_kem_demo(algorithm: str = "ML-KEM-512") -> dict:
 
 def run_hybrid_demo(message: bytes, kem_algorithm="ML-KEM-768",
                     classical_algorithm="X25519") -> dict:
-    """ECDH + ML-KEM -> HKDF-SHA256 -> AES-256-GCM round trip."""
+    """ECDHE + ML-KEM -> HKDF-SHA256 -> AES-256-GCM round trip."""
     if not isinstance(message, bytes):
         raise TypeError("message 必须为 bytes")
     if kem_algorithm not in _KEM_MODULES:
@@ -140,7 +140,7 @@ def run_hybrid_demo(message: bytes, kem_algorithm="ML-KEM-768",
     okm = hmac.new(prk, info + b"\x01", hashlib.sha256).digest()
     if okm != sender_key:
         raise RuntimeError("HKDF 计算展示与实际 AES 密钥不一致")
-    trace.add("混合密钥派生：HKDF-SHA256", "IKM=ECDH_secret || K；PRK=HMAC-SHA256(salt,IKM)；T₁=HMAC-SHA256(PRK,info || 0x01)；AES_key=T₁", {
+    trace.add("混合密钥派生：HKDF-SHA256", "IKM=ECDHE_secret || K；PRK=HMAC-SHA256(salt,IKM)；T₁=HMAC-SHA256(PRK,info || 0x01)；AES_key=T₁", {
         "classical_algorithm": classical_algorithm, "ecdh_secret": sender_classical,
         "MLKEM_K": sender_pq, "IKM": ikm, "salt": salt, "info": info,
         "PRK": prk, "expand_input": info + b"\x01", "AES_key": sender_key,
@@ -436,8 +436,8 @@ def comparison_rows() -> list:
     """
     return [
         {"name": "X25519", "kind": "经典密钥交换", "public_size": "32", "output_size": "32 字节共享秘密", "standard": "RFC 7748", "basis": "椭圆曲线离散对数"},
-        {"name": "ECDH-P256", "kind": "经典密钥交换", "public_size": "65（未压缩点）", "output_size": "32 字节共享秘密", "standard": "SP 800-56A", "basis": "椭圆曲线离散对数"},
-        {"name": "ECDH-P384", "kind": "经典密钥交换", "public_size": "97（未压缩点）", "output_size": "48 字节共享秘密", "standard": "SP 800-56A", "basis": "椭圆曲线离散对数"},
+        {"name": "ECDHE-P256", "kind": "经典密钥交换", "public_size": "65（未压缩点）", "output_size": "32 字节共享秘密", "standard": "SP 800-56A", "basis": "椭圆曲线离散对数"},
+        {"name": "ECDHE-P384", "kind": "经典密钥交换", "public_size": "97（未压缩点）", "output_size": "48 字节共享秘密", "standard": "SP 800-56A", "basis": "椭圆曲线离散对数"},
         {"name": "ML-KEM-768", "kind": "后量子密钥封装", "public_size": "1184", "output_size": "1088 字节封装密文", "standard": "FIPS 203", "basis": "模格"},
         {"name": "Ed25519", "kind": "经典数字签名", "public_size": "32", "output_size": "64 字节签名", "standard": "RFC 8032", "basis": "椭圆曲线离散对数"},
         {"name": "ECDSA-P256", "kind": "经典数字签名", "public_size": "65（未压缩点）", "output_size": "DER 签名 ≤72 字节；r‖s 为 64 字节", "standard": "FIPS 186-5 / RFC 3279", "basis": "椭圆曲线离散对数"},

@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-16",
+  "tool": "built-in image_gen.imagegen",
+  "intent": "edit",
+  "transparent_background": false,
+  "prompts": [
+    {
+      "key": "overview",
+      "source_relationship": "rId11",
+      "prompt": "Use case: text-localization. Edit target: the provided Chinese technical report diagram. Change the one line \"ML-KEM / ECDH 重算\" into \"ML-KEM / ECDHE 重算\". This is a minimal terminology correction only. Keep the exact original layout, all arrows, all other Chinese/English text, mathematical symbols, boxes, colors, fonts, margins, aspect ratio, and background unchanged. Do not add any new text or reinterpret the protocol. Preserve all existing ECDHE tokens without adding an extra E. Output the corrected complete diagram at the original resolution or higher."
+    },
+    {
+      "key": "architecture",
+      "source_relationship": "rId13",
+      "prompt": "Use case: text-localization. Edit target: the provided Chinese technical report diagram. In the 服务器握手验证 box change \"ML-KEM解封装 + ECDH\" into \"ML-KEM解封装 + ECDHE\". This is a minimal terminology correction only. Keep the exact original layout, all arrows, all other Chinese/English text, mathematical symbols, boxes, colors, fonts, margins, aspect ratio, and background unchanged. Do not add any new text or reinterpret the protocol. Preserve all existing ECDHE tokens without adding an extra E. Output the corrected complete diagram at the original resolution or higher."
+    },
+    {
+      "key": "sequence",
+      "source_relationship": "rId14",
+      "prompt": "Use case: text-localization. Edit target: the provided Chinese technical report diagram. Change every \"ECDH\" token to \"ECDHE\": both instances of \"ECDH计算\" become \"ECDHE计算\", and \"ECDH秘密\" becomes \"ECDHE秘密\". This is a minimal terminology correction only. Keep the exact original layout, all arrows, all other Chinese/English text, mathematical symbols, boxes, colors, fonts, margins, aspect ratio, and background unchanged. Do not add any new text or reinterpret the protocol. Preserve all existing ECDHE tokens without adding an extra E. Output the corrected complete diagram at the original resolution or higher."
+    },
+    {
+      "key": "timing",
+      "source_relationship": "rId37",
+      "prompt": "Use case: text-localization. Edit target: the provided Chinese technical report diagram. In the proposed timing boxes change \"ECDH运算\" into \"ECDHE运算\". This is a minimal terminology correction only. Keep the exact original layout, all arrows, all other Chinese/English text, mathematical symbols, boxes, colors, fonts, margins, aspect ratio, and background unchanged. Do not add any new text or reinterpret the protocol. Preserve all existing ECDHE tokens without adding an extra E. Output the corrected complete diagram at the original resolution or higher."
+    }
+  ]
+}

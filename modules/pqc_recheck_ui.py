@@ -15,14 +15,14 @@ from modules.mlkem_trace_ui import CalculationTraceView
 
 FIELD_NAMES = {
     "group_id": "协商组", "cipher_code": "协商密码套件", "server_key_share": "服务器实际交换材料",
-    "kem_private_key": "同次连接的 ML-KEM 解封装私钥", "ecdh_private_key": "同次连接的 ECDH 临时私钥",
+    "kem_private_key": "同次连接的 ML-KEM 解封装私钥", "ecdh_private_key": "同次连接的 ECDHE 临时私钥",
     "expected_shared_secret": "原连接记录的共享秘密（用于比较）",
     "certificate_chain": "原握手证书", "signature_scheme": "握手签名算法",
     "signature": "原 CertificateVerify 签名", "transcript_before_cv": "签名前的完整握手转录",
     "encrypted_records": "原连接完整密文记录",
     "server_finished": "服务器 Finished 握手记录", "client_finished": "客户端 Finished 握手记录",
 }
-OPERATIONS = {"exchange": "密钥封装 / ECDH", "signature": "握手签名", "records": "加密记录"}
+OPERATIONS = {"exchange": "密钥封装 / ECDHE", "signature": "握手签名", "records": "加密记录"}
 
 
 class _RecheckWorker(QThread):
@@ -74,7 +74,7 @@ class PqcRecheckTab(QWidget):
         root.addWidget(splitter, 1)
         secrets = QGroupBox("2. 补充同次连接的秘密参数")
         secret_layout = QVBoxLayout(secrets)
-        hint = QLabel("私钥和共享秘密使用十六进制；X25519 私钥为 32 字节，ECDH 私钥为大端标量，"
+        hint = QLabel("私钥和共享秘密使用十六进制；X25519 私钥为 32 字节，P-256/P-384 的 ECDHE 私钥为大端标量，"
                       "ML-KEM 私钥为原始解封装私钥。可导入客户端记录的参数 JSON 或 NSS / OpenSSL Key Log。"
                       "Key Log 按 ClientRandom 匹配，只能提供流量秘密，不能代替 ML-KEM 私钥。")
         hint.setWordWrap(True)

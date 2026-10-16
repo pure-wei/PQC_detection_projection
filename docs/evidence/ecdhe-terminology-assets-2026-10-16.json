@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-16",
+  "updated_assets": [
+    {
+      "relationship": "rId11",
+      "asset": "docs/figures/main-module-overview.png",
+      "sha256": "ca0cf88af57f0c03042a445effe180758ae4eda1a722a41307324aa81a951818"
+    },
+    {
+      "relationship": "rId13",
+      "asset": "docs/figures/system-architecture.png",
+      "sha256": "8c84a6bafa5b767d83a8d6fd848862fc92423faf3d1661a2a846b9a4901b9e46"
+    },
+    {
+      "relationship": "rId15",
+      "asset": "docs/screenshots/compact-passive-and-active.png",
+      "sha256": "aa6911dac60cc8ad31c79ddfe4c4db08c1415a18fb809d7f4ee5a1cfc2cf9a85"
+    },
+    {
+      "relationship": "rId17",
+      "asset": "docs/screenshots/compact-session-secret-format.png",
+      "sha256": "7d22ae769959204896735262fd26d0fc190ebc896b48f4383d8fb8223267ab82"
+    },
+    {
+      "relationship": "rId18",
+      "asset": "docs/screenshots/compact-keylog-format.png",
+      "sha256": "4149b821ae226988404fc1041c605976f66b49f64829e9de66139d57e787e9ca"
+    },
+    {
+      "relationship": "rId21",
+      "asset": "docs/screenshots/compact-active-deep-validation.png",
+      "sha256": "cea47936b166d6a1a11db35ba72b4aef82e6f152f776c1f2164780ffbe9e38f7"
+    },
+    {
+      "relationship": "rId22",
+      "asset": "docs/screenshots/compact-mlkem-decapsulation.png",
+      "sha256": "b944c4a3cc596d9fbb7fc9216c51eb99414fdee928e743644a4b8ac324d39ccd"
+    },
+    {
+      "relationship": "rId23",
+      "asset": "docs/screenshots/compact-mlkem-demo.png",
+      "sha256": "470af5a37cf38d6b07e0e5b68d0c3e1441ba040fb2bbd2d2a39d875120d958ca"
+    },
+    {
+      "relationship": "rId24",
+      "asset": "docs/screenshots/compact-three-rechecks.png",
+      "sha256": "c978f4cd20892d82e9fb2a20088865730ba532a1acbd1716ae3414bba8d4cc9a"
+    },
+    {
+      "relationship": "rId25",
+      "asset": "docs/screenshots/compact-keylog-https-replay.png",
+      "sha256": "261a8f8b16eda44c1262d739ded34fdf090a94ef6fba5e31c5579ff92b35508b"
+    },
+    {
+      "relationship": "rId26",
+      "asset": "docs/screenshots/compact-lab-tls.png",
+      "sha256": "91626006d50ccac0d1ed7687e337cf2815f6677947e3a7c51d4637dae8d990fb"
+    },
+    {
+      "relationship": "rId27",
+      "asset": "docs/screenshots/compact-lab-https.png",
+      "sha256": "e7ad6003151fa82076194e28d2844ff5dd3ba10a55f086f800739a913022c99b"
+    },
+    {
+      "relationship": "rId28",
+      "asset": "docs/screenshots/compact-lab-tcp.png",
+      "sha256": "064a16d05bdbf4c2dcbf304fd8ccbbe044ba5614d7011804299ca377cf302c18"
+    },
+    {
+      "relationship": "rId29",
+      "asset": "docs/screenshots/compact-lab-udp.png",
+      "sha256": "f5409ee4939b646151fcd112b0259757e12b706f7b0fdbc221a472f51ccf082b"
+    },
+    {
+      "relationship": "rId34",
+      "asset": "docs/screenshots/compact-missing-finished.png",
+      "sha256": "9b3819238efeb9f7e8f746e937463874a2ea6f33c9104f709ce66bc530d44ef8"
+    },
+    {
+      "relationship": "rId35",
+      "asset": "docs/screenshots/compact-tampered-ciphertext.png",
+      "sha256": "e4d15784b8477ee58adf49abfb870ca13441ccca4d3cdab02283dae518721a34"
+    }
+  ],
+  "display_term": "ECDHE",
+  "compatible_schema_fields": [
+    "ecdh_private_key",
+    "ecdh_shared_secret",
+    "ecdh_secret"
+  ],
+  "library_primitive": "ec.ECDH()"
+}

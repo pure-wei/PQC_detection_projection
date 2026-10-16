@@ -37,3 +37,6 @@ pqc_lab/public/*.txt
 
 # Reproducible synthetic IPsec capture
 !samples/ipsec_demo.pcap
+
+# 本地旧内容归档备份（不进仓库）
+archives/

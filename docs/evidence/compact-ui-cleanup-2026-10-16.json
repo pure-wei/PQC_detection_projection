@@ -1,0 +1,144 @@
+{
+  "date": "2026-10-16",
+  "current_report": "docs/报告10.15.docx",
+  "previous_snapshot": "archives/previous.zip",
+  "removed": [
+    {
+      "path": "docs/竞赛作品设计报告.docx",
+      "bytes": 2628805,
+      "sha256": "99b45431c77c4e75fe6284ce74f71873b9cd748f95ae9440c7c62a05fbc56fc0"
+    },
+    {
+      "path": "docs/后量子协议检测与算法验证设计报告_代码更新版.docx",
+      "bytes": 9059719,
+      "sha256": "ea24fd78797557e1bd81c5c6952b59aae058d14968fb49ff84fc9beade5126e5"
+    },
+    {
+      "path": "docs/后量子协议检测与算法验证设计报告_代码更新版.pdf",
+      "bytes": 3364554,
+      "sha256": "027a575dbe60f535be8e8b7b892827acb1f0d974a38db4e9c996afe6c23e672e"
+    },
+    {
+      "path": "docs/generate_pqc_detection_draft.py",
+      "bytes": 25418,
+      "sha256": "2c8d7bac43749c1295567fbdbde8bff33dfdbbffd63120e086c16c7e889d8a88"
+    },
+    {
+      "path": "docs/evidence/report-contest-format-verification-2026-10-13.json",
+      "bytes": 4336,
+      "sha256": "509c74856203918915e4941fc884e78437d944921279141fa80a975e095173b0"
+    },
+    {
+      "path": "docs/evidence/report-layout-verification-2026-10-12.json",
+      "bytes": 20560,
+      "sha256": "e72be6f234d24c6c53684287ae392d3738c132f46d549af3c84b2c5962a24158"
+    },
+    {
+      "path": "docs/evidence/report-figure-manifest-2026-10-12.json",
+      "bytes": 6522,
+      "sha256": "c9dfbc8b5d20dc7e68b5a60af35e253ce61228dbc21838f2828752a011061d91"
+    },
+    {
+      "path": "docs/screenshots/fig-4-1-passive-and-active.png",
+      "bytes": 187768,
+      "sha256": "f751b637253cf98651e8a101486f0f6f344830d6f6c3530e907d0201c2202677"
+    },
+    {
+      "path": "docs/screenshots/fig-3-3-actual-mlkem-decapsulation.png",
+      "bytes": 299098,
+      "sha256": "42afcc3ff15a1dce1bb590ba92c04e66ed6c449a0c3d586c23d39f03aa41b7c1"
+    },
+    {
+      "path": "docs/screenshots/fig-4-5a-missing-finished.png",
+      "bytes": 393375,
+      "sha256": "32bda48a08e9cd3a4e87236989dbfaab7aa387e6a03fbe1fe2892568e22bd731"
+    },
+    {
+      "path": "docs/screenshots/fig-3-2-active-deep-validation.png",
+      "bytes": 786076,
+      "sha256": "139ae7046c2e9edac0875d0d54969ded4d9ad2f8860710d90f94c92e1d1977ab"
+    },
+    {
+      "path": "docs/screenshots/fig-4-3-three-rechecks.png",
+      "bytes": 409067,
+      "sha256": "622038a5ff908541f1f24586603f76f7aef4c0dfeab896715f8c5ea71e90b639"
+    },
+    {
+      "path": "docs/screenshots/fig-4-2a-session-and-secret-format.png",
+      "bytes": 438579,
+      "sha256": "edf45fdf126a91ea8c8589b9789fd96754fd43599734f3684ac23272f686a3ae"
+    },
+    {
+      "path": "docs/screenshots/fig-4-5b-tampered-ciphertext.png",
+      "bytes": 418586,
+      "sha256": "0b0cb83932e741b36ee0d926fe7e9df027d612ed682a4531b2677422d244f440"
+    },
+    {
+      "path": "docs/screenshots/fig-4-2b-clientrandom-keylog-format.png",
+      "bytes": 476386,
+      "sha256": "a13ac17ea24d2d62b8e9365d69d0f4cfe1ae3ae3080689a816a12283324770ef"
+    },
+    {
+      "path": "docs/screenshots/fig-4-4-keylog-https-replay.png",
+      "bytes": 482787,
+      "sha256": "af18cafa605f8e841d5f9bb11855519bd3e9eaf96e345d263474dc365cf87eb6"
+    },
+    {
+      "path": "docs/screenshots/fig-2-1-current-main-window.png",
+      "bytes": 510907,
+      "sha256": "f5954e8bf0765653141fe922faaf98e9e0eb5748d2ed10a2e18f895585e6527d"
+    }
+  ],
+  "retained": "当前源码、测试、报告模板、报告引用的历史原始证据，以及唯一上一版归档。",
+  "removed_cache_directories": [
+    "__pycache__",
+    "tests/__pycache__",
+    "modules/__pycache__",
+    "pqc_lab/__pycache__",
+    ".pytest_cache"
+  ],
+  "removed_old_runtime_logs": [
+    "pqc_detail_cloudflare.com_20261008_154952.txt",
+    "pqc_detail_cloudflare.com_20261008_155225.txt",
+    "pqc_detail_pqc.der_20261008_160708.txt",
+    "pqc_detail_pqc.der_20261008_161325.txt",
+    "pqc_detail_pqc.der_20261008_161415.txt",
+    "pqc_detail_pqc.der_20261008_161438.txt",
+    "pqc_detail_127.0.0.1_20261008_161510.txt",
+    "pqc_detail_pqc.der_20261008_162212.txt",
+    "pqc_detail_127.0.0.1_20261008_162248.txt",
+    "pqc_detail_pqc.der_20261008_162259.txt",
+    "pqc_detail_pqc.der_20261008_162443.txt",
+    "pqc_detail_pqc.der_20261008_162504.txt",
+    "pqc_detail_cloudflare.com_20261008_162923.txt",
+    "pqc_detail_pqc.der_20261008_165358.txt",
+    "pqc_detail_pqc.der_20261008_170128.txt",
+    "pqc_detail_pqc.der_20261012_000014.txt",
+    "pqc_detail_pqc.der_20261012_000356.txt",
+    "pqc_detail_cloudflare.com_20261012_001152.txt",
+    "pqc_detail_pqc.der_20261012_001503.txt",
+    "pqc_detail_pqc.der_20261012_001701.txt",
+    "pqc_detail_cloudflare.com_20261012_145854.txt",
+    "pqc_detail_127.0.0.1_20261012_160412.txt",
+    "pqc_detail_127.0.0.1_20261012_160507.txt",
+    "pqc_detail_pqc.der_20261012_162104.txt",
+    "pqc_detail_127.0.0.1_20261012_162631.txt",
+    "pqc_detail_127.0.0.1_20261012_162810.txt",
+    "pqc_detail_127.0.0.1_20261012_163131.txt",
+    "pqc_detail_cloudflare.com_20261012_170125.txt",
+    "pqc_detail_cloudflare.com_20261014_151344.txt",
+    "pqc_detail_cloudflare.com_20261014_151623.txt",
+    "pqc_detail_cloudflare.com_20261014_192554.txt",
+    "pqc_detail_cloudflare.com_20261014_192922.txt",
+    "pqc_detail_cloudflare.com_20261014_193729.txt",
+    "pqc_detail_pqc.der_20261015_151936.txt",
+    "pqc_detail_pqc.der_20261015_152737.txt",
+    "pqc_detail_pqc.der_20261016_100908.txt",
+    "pqc_detail_127.0.0.1_20261016_101614.txt",
+    "pqc_detail_127.0.0.1_20261016_101627.txt",
+    "pqc_detail_127.0.0.1_20261016_101717.txt",
+    "pqc_detail_127.0.0.1_20261016_101801.txt",
+    "pqc_detail_pqc.der_20261016_101813.txt"
+  ],
+  "retained_latest_runtime_log": "pqc_detail_127.0.0.1_20261016_102136.txt"
+}
