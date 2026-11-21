@@ -59,12 +59,18 @@ def _derive_key(classical_secret, pq_secret, salt):
                     classical_secret + pq_secret)
 
 
-def run_kem_demo(algorithm: str = "ML-KEM-512") -> dict:
+def _private_der(private):
+    return private.private_bytes(serialization.Encoding.DER,
+                                 serialization.PrivateFormat.PKCS8,
+                                 serialization.NoEncryption())
+
+
+def run_kem_demo(algorithm: str = "ML-KEM-512", encapsulation_input=None) -> dict:
     """Show a standalone ML-KEM encapsulation and decapsulation round trip."""
     if algorithm not in _KEM_MODULES:
         raise ValueError("不支持的密钥封装算法：%s" % algorithm)
     kem = _pq_module("kem", _KEM_MODULES[algorithm])
-    calculation = run_calculation(algorithm, kem)
+    calculation = run_calculation(algorithm, kem, encapsulation_input)
     public, ciphertext = calculation["public_key"], calculation["ciphertext"]
     sender_shared, receiver_shared = calculation["sender_shared"], calculation["receiver_shared"]
     changed_shared = calculation["changed_shared"]
@@ -83,6 +89,13 @@ def run_kem_demo(algorithm: str = "ML-KEM-512") -> dict:
         "receiver_fingerprint": fingerprint(receiver_shared),
         "public_key_base64": base64.b64encode(public).decode("ascii"),
         "ciphertext_base64": base64.b64encode(ciphertext).decode("ascii"),
+        "materials": {
+            "keys": {"接收方 ML-KEM 公钥": public,
+                     "接收方 ML-KEM 私钥": calculation["private_key"]},
+            "inputs": {"封装输入 m（32 字节）": calculation["encapsulation_input"]},
+            "outputs": {"封装密文": ciphertext, "发送方共享秘密": sender_shared,
+                        "接收方共享秘密": receiver_shared},
+        },
         "calculation_trace": calculation["trace"],
     }
 
@@ -168,6 +181,20 @@ def run_hybrid_demo(message: bytes, kem_algorithm="ML-KEM-768",
         "kem_ciphertext_base64": base64.b64encode(kem_ciphertext).decode("ascii"),
         "ciphertext_base64": base64.b64encode(ciphertext).decode("ascii"),
         "nonce_base64": base64.b64encode(nonce).decode("ascii"),
+        "materials": {
+            "keys": {"接收方 ML-KEM 公钥": kem_public,
+                     "接收方 ML-KEM 私钥": calculation["private_key"],
+                     "发送方 ECDHE 公钥": sender_pub,
+                     "发送方 ECDHE 私钥（PKCS8 DER）": _private_der(sender_ecdh),
+                     "接收方 ECDHE 公钥": receiver_pub,
+                     "接收方 ECDHE 私钥（PKCS8 DER）": _private_der(receiver_ecdh)},
+            "inputs": {"消息原始字节": message, "HKDF Salt": salt,
+                       "HKDF Info": info, "Nonce": nonce, "AAD": aad},
+            "outputs": {"ML-KEM 封装密文": kem_ciphertext,
+                        "ECDHE 共享秘密": sender_classical, "ML-KEM 共享秘密": sender_pq,
+                        "AES-256-GCM 密钥": sender_key,
+                        "AES-GCM 密文（含认证标签）": ciphertext, "解密明文": recovered},
+        },
         "calculation_trace": calculation["trace"],
     }
 
@@ -200,6 +227,11 @@ def run_signature_demo(message: bytes, algorithm: str) -> dict:
         "signature_base64": base64.b64encode(signature).decode("ascii"),
         "verified": verified,
         "altered_verified": altered_verified,
+        "materials": {
+            "keys": {"后量子公钥": public, "后量子私钥": secret},
+            "inputs": {"消息原始字节": message},
+            "outputs": {"后量子签名": signature},
+        },
         "calculation_trace": calculation_trace,
     }
 
@@ -342,6 +374,14 @@ def _sign_hybrid_message(message, pq_algorithm, classical_algorithm, include_tra
         "pq_signature_base64": base64.b64encode(pq_signature).decode("ascii"),
     }
     if include_trace:
+        result["materials"] = {
+            "keys": {"传统公钥（%s）" % encoding: classical_public,
+                     "传统私钥（PKCS8 DER）": _private_der(private),
+                     "后量子公钥": pq_public, "后量子私钥": pq_secret},
+            "inputs": {"消息原始字节": message,
+                       "实际签名输入（绑定算法、公钥与消息）": data},
+            "outputs": {"传统签名": classical_signature, "后量子签名": pq_signature},
+        }
         calculation_trace = _new_signature_trace(pq_algorithm, classical_algorithm)
         trace = Trace(calculation_trace["steps"])
         fields = [("classical_algorithm", classical_algorithm.encode("ascii")),

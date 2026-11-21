@@ -107,11 +107,11 @@ def test_main_window_exposes_recheck_demo_and_comparison_pages():
     window.close()
 
 
-def test_standalone_kem_page_shows_verification_without_dumping_secrets():
+def test_standalone_kem_page_shows_verification_and_full_key_material():
     app = QApplication.instance() or QApplication([])
     tab = PqcDemoTab()
     assert tab.pages.tabText(0) == "① ML-KEM 密钥封装"
-    assert not tab.message_box.isVisible()
+    assert tab.message_box is tab.message_inputs["kem"]
     tab.standalone_kem_combo.setCurrentText("ML-KEM-512")
     tab.btn_kem.click()
     _wait_for(app, lambda: tab.btn_kem.isEnabled())
@@ -123,8 +123,10 @@ def test_standalone_kem_page_shows_verification_without_dumping_secrets():
     assert "800 字节" in output
     assert "768 字节" in output
     assert "公钥（Base64）" not in output
-    assert "公钥（Base64）" in tab.kem_raw_output.toPlainText()
-    assert "私钥" not in tab.kem_raw_output.toPlainText()
+    material = tab.material_views["kem"]
+    assert tab.kem_result_tabs.currentWidget() is material
+    assert "接收方 ML-KEM 公钥" in material.public_edit.toPlainText()
+    assert "接收方 ML-KEM 私钥" in material.private_edit.toPlainText()
     tab.close()
 
 
@@ -162,6 +164,10 @@ def test_captured_pure_mlkem_group_configures_kem_demo():
     assert tab.import_captured_parameters()
     assert tab.pages.currentIndex() == 0
     assert tab.standalone_kem_combo.currentText() == "ML-KEM-1024"
+    assert len(tab.message_inputs["kem"].message_bytes()) == 32
+    tab.btn_kem.click()
+    _wait_for(app, lambda: tab._worker is None)
+    assert "验证通过" in tab.kem_status.text()
     tab.close()
 
 
@@ -177,6 +183,7 @@ def test_captured_classical_group_is_rejected_with_clear_hint():
 def test_message_demo_rejects_input_over_4096_utf8_bytes():
     app = QApplication.instance() or QApplication([])
     tab = PqcDemoTab()
+    tab.pages.setCurrentIndex(1)
     tab.message_edit.setPlainText("量" * 1366)
     tab.btn_hybrid.click()
     app.processEvents()
@@ -189,6 +196,7 @@ def test_message_demo_rejects_input_over_4096_utf8_bytes():
 def test_hybrid_demo_button_shows_real_roundtrip():
     app = QApplication.instance() or QApplication([])
     tab = PqcDemoTab()
+    tab.pages.setCurrentIndex(1)
     tab.message_edit.setPlainText("界面加密测试")
     tab.btn_hybrid.click()
     _wait_for(app, lambda: tab.btn_hybrid.isEnabled())
@@ -200,9 +208,10 @@ def test_hybrid_demo_button_shows_real_roundtrip():
     tab.close()
 
 
-def test_signature_button_shows_verification_and_optional_full_signature():
+def test_signature_button_shows_verification_and_full_signature():
     app = QApplication.instance() or QApplication([])
     tab = PqcDemoTab()
+    tab.pages.setCurrentIndex(2)
     tab.message_edit.setPlainText("签名测试")
     tab.signature_combo.setCurrentText("Falcon-512")
     tab.btn_sign.click()
@@ -213,13 +222,14 @@ def test_signature_button_shows_verification_and_optional_full_signature():
     assert "原消息验签：通过" in output
     assert "改动消息验签：已拒绝" in output
     assert "签名（Base64）" not in output
-    assert "签名（Base64）" in tab.signature_raw_output.toPlainText()
-    assert not tab.signature_raw_output.isVisible()
-    tab.signature_raw_checkbox.setChecked(True)
+    material = tab.material_views["sign"]
+    material.encoding_combo.setCurrentText("Base64")
+    assert "后量子签名（Base64，" in material.output.toPlainText()
+    assert "后量子私钥" in material.private_edit.toPlainText()
     tab.pages.setCurrentIndex(2)
     tab.show()
     app.processEvents()
-    assert tab.signature_raw_output.isVisible()
+    assert material.isVisible()
     tab.close()
 
 
@@ -232,14 +242,14 @@ def test_selected_hybrid_parameters_and_resizable_layout():
     app.processEvents()
     assert tab.message_box.isVisible()
     assert isinstance(tab.main_splitter, QSplitter)
-    assert tab.main_splitter.count() == 2
+    assert tab.main_splitter.count() == 3
     assert {tab.kem_combo.itemText(i) for i in range(tab.kem_combo.count())} == {
         "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"}
     assert {tab.classical_combo.itemText(i) for i in range(tab.classical_combo.count())} == {
         "X25519", "P-256", "P-384"}
-    tab.main_splitter.setSizes([220, 380])
+    tab.main_splitter.setSizes([220, 130, 250])
     app.processEvents()
-    assert tab.main_splitter.sizes()[0] >= 180
+    assert all(size > 0 for size in tab.main_splitter.sizes())
 
     tab.kem_combo.setCurrentText("ML-KEM-1024")
     tab.classical_combo.setCurrentText("P-384")
@@ -251,12 +261,10 @@ def test_selected_hybrid_parameters_and_resizable_layout():
     assert "选择参数组" in output
     assert "P-384 公钥：97 字节" in output
     assert "封装密文：1568 字节" in output
-    assert not tab.hybrid_raw_output.isVisible()
-    tab.pages.setCurrentIndex(1)
-    tab.hybrid_raw_checkbox.setChecked(True)
-    app.processEvents()
-    assert tab.hybrid_raw_output.isVisible()
-    assert "AES-GCM 密文（Base64，含认证标签）" in tab.hybrid_raw_output.toPlainText()
+    material = tab.material_views["hybrid"]
+    material.encoding_combo.setCurrentText("Base64")
+    assert material.isVisible()
+    assert "AES-GCM 密文（含认证标签）（Base64，" in material.output.toPlainText()
     tab.close()
 
 
@@ -303,10 +311,10 @@ def test_hybrid_signature_button_runs_selected_algorithms_and_tamper_checks(clas
     assert "篡改传统签名：已拒绝" in output
     assert "篡改后量子签名：已拒绝" in output
     assert tab.hybrid_signature_trace_view.tree.topLevelItemCount()
-    assert "后量子公钥（Base64）" in tab.hybrid_signature_raw_output.toPlainText()
-    assert not tab.hybrid_signature_raw_output.isVisible()
-    tab.hybrid_signature_raw_checkbox.setChecked(True)
-    assert tab.hybrid_signature_raw_output.isVisible()
+    material = tab.material_views["hybrid_sign"]
+    assert "后量子公钥" in material.public_edit.toPlainText()
+    assert "后量子私钥" in material.private_edit.toPlainText()
+    assert material.isVisible()
     tab.close()
 
 
@@ -315,6 +323,7 @@ def test_hybrid_signature_clears_previous_result_and_recovers_after_failure(monk
 
     app = QApplication.instance() or QApplication([])
     tab = PqcDemoTab()
+    tab.pages.setCurrentIndex(3)
     tab.btn_hybrid_sign.click()
     _wait_for(app, lambda: tab._worker is None)
     assert tab.hybrid_signature_trace_view.tree.topLevelItemCount()
@@ -322,7 +331,7 @@ def test_hybrid_signature_clears_previous_result_and_recovers_after_failure(monk
     tab.btn_hybrid_sign.click()
     assert "4096" in tab.hybrid_signature_output.toPlainText()
     assert tab.hybrid_signature_trace_view.tree.topLevelItemCount() == 0
-    assert not tab.hybrid_signature_raw_output.toPlainText()
+    assert not tab.material_views["hybrid_sign"].output.toPlainText()
 
     def fail(*args):
         raise RuntimeError("混合签名计算失败")
@@ -521,6 +530,7 @@ def test_kem_calculation_view_shows_parameters_randomness_and_all_coefficients()
 def test_hybrid_trace_is_cleared_when_new_input_is_invalid():
     app = QApplication.instance() or QApplication([])
     tab = PqcDemoTab()
+    tab.pages.setCurrentIndex(1)
     tab.btn_hybrid.click()
     _wait_for(app, lambda: tab.btn_hybrid.isEnabled())
     viewer = tab.hybrid_trace_view
@@ -556,6 +566,7 @@ def test_kem_trace_is_cleared_and_buttons_recover_after_a_failed_retry(monkeypat
 def test_signature_details_use_family_parameters_and_real_calculations():
     app = QApplication.instance() or QApplication([])
     tab = PqcDemoTab()
+    tab.pages.setCurrentIndex(2)
     tab.signature_combo.setCurrentText("Falcon-512")
     tab.btn_sign.click()
     _wait_for(app, lambda: tab.btn_sign.isEnabled())

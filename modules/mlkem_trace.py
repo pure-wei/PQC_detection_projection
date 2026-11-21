@@ -411,12 +411,18 @@ class MLKEM:
         return selected
 
 
-def run_calculation(algorithm, native):
+def run_calculation(algorithm, native, encapsulation_input=None):
     """Run a real ephemeral calculation, recording it and checking native agreement."""
     engine = MLKEM(algorithm)
     trace = Trace()
-    d, z, m = (os.urandom(32) for _ in range(3))
-    _record(trace, "本次运行的随机输入", "d,z,m ← 系统密码学随机源，各 32 字节；随后所有随机性由它们派生", {
+    if encapsulation_input is not None and (
+            not isinstance(encapsulation_input, bytes) or len(encapsulation_input) != 32):
+        raise ValueError("封装输入 m 必须为 32 字节")
+    d, z = os.urandom(32), os.urandom(32)
+    m = os.urandom(32) if encapsulation_input is None else encapsulation_input
+    input_description = ("d,z,m ← 系统密码学随机源，各 32 字节" if encapsulation_input is None
+                         else "d,z ← 系统密码学随机源；m ← 用户指定的 32 字节输入")
+    _record(trace, "本次运行的随机输入", input_description + "；随后所有随机性由它们派生", {
         "d": d, "z": z, "m": m}, "FIPS 203，算法 19–20")
     public, secret = engine.keygen(d, z, trace)
     ciphertext, sender = engine.encaps(public, m, trace)
@@ -438,7 +444,8 @@ def run_calculation(algorithm, native):
         raise RuntimeError("ML-KEM 教学计算与原生库交叉校验失败")
     _record(trace, "原生库交叉校验", "教学实现生成的密钥/密文由 pqcrypto 解封装；原生库生成的密文由教学实现解封装", checks,
             "本项目互操作验证")
-    return dict(public_key=public, ciphertext=ciphertext, sender_shared=sender,
+    return dict(public_key=public, private_key=secret, encapsulation_input=m,
+                ciphertext=ciphertext, sender_shared=sender,
                 receiver_shared=receiver, changed_shared=rejected, native_verified=True,
                 trace=dict(algorithm=algorithm, parameters=engine.parameters(), steps=trace.steps,
                            source="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf"))

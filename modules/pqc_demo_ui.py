@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
 """Qt pages for the offline PQC algorithm demonstrations."""
 
+import base64
 import json
+import os
 from html import escape
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QGroupBox, QHBoxLayout,
+    QAbstractItemView, QComboBox, QGridLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QPlainTextEdit, QPushButton, QSplitter, QTextEdit,
-    QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QTableWidget, QTableWidgetItem, QTabWidget,
+    QVBoxLayout, QWidget,
     QFileDialog,
 )
 
@@ -29,21 +32,186 @@ _CAPTURE_DEMO_GROUPS = {
 }
 
 
+class _DemoMaterialsView(QWidget):
+    """Separate key fields above the message, with output below it."""
+
+    def __init__(self):
+        super().__init__()
+        self._materials = {}
+        self._input_encoding = ""
+        self.keys_box = QGroupBox("临时密钥（运行后自动填充）")
+        grid = QGridLayout(self.keys_box)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("密钥 / 输出编码"))
+        self.encoding_combo = QComboBox()
+        self.encoding_combo.addItems(["HEX", "Base64"])
+        self.encoding_combo.currentTextChanged.connect(self._render)
+        row.addWidget(self.encoding_combo)
+        row.addWidget(QLabel("完整数据可选中复制。"))
+        row.addStretch(1)
+        grid.addLayout(row, 0, 0, 1, 2)
+        self.private_edit = QPlainTextEdit()
+        self.public_edit = QPlainTextEdit()
+        for index, (label, editor) in enumerate((("私钥", self.private_edit), ("公钥", self.public_edit)), 1):
+            editor.setReadOnly(True)
+            editor.setMinimumHeight(45)
+            editor.setPlaceholderText("运行演示后显示本轮完整%s" % label)
+            grid.addWidget(QLabel(label), index, 0)
+            grid.addWidget(editor, index, 1)
+        grid.setColumnStretch(1, 1)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.output = QPlainTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setPlaceholderText("运行后显示密文、签名、共享秘密或解密明文。")
+        layout.addWidget(self.output, 1)
+
+    def clear(self):
+        self._materials = {}
+        self._input_encoding = ""
+        self.private_edit.clear()
+        self.public_edit.clear()
+        self.output.clear()
+
+    def set_materials(self, materials, input_encoding=""):
+        self._materials = materials
+        self._input_encoding = input_encoding
+        self._render()
+
+    def _render(self):
+        encoding = self.encoding_combo.currentText()
+        def format_fields(fields):
+            lines = []
+            for label, value in fields.items():
+                shown = value.hex() if encoding == "HEX" else base64.b64encode(value).decode("ascii")
+                lines.extend(["%s（%s，%d 字节）：" % (label, encoding, len(value)), shown, ""])
+                if label == "解密明文":
+                    try:
+                        lines.extend(["%s（UTF-8）：%s" % (label, json.dumps(value.decode("utf-8"), ensure_ascii=False)), ""])
+                    except UnicodeDecodeError:
+                        pass
+            return "\n".join(lines)
+
+        keys = self._materials.get("keys", {})
+        self.private_edit.setPlainText(format_fields({k: v for k, v in keys.items() if "私钥" in k}))
+        self.public_edit.setPlainText(format_fields({k: v for k, v in keys.items() if "公钥" in k}))
+        lines = []
+        if self._input_encoding:
+            lines.append("输入编码：" + self._input_encoding)
+        outputs = self._materials.get("outputs", {})
+        if outputs:
+            lines.extend(["【输出】", format_fields(outputs)])
+        parameters = {k: v for k, v in self._materials.get("inputs", {}).items() if k != "消息原始字节"}
+        if parameters:
+            lines.extend(["【计算参数】", format_fields(parameters)])
+        self.output.setPlainText("\n".join(lines))
+
+
+class _DemoMessageBox(QGroupBox):
+    """A permanent input form owned by a single demonstration page."""
+
+    changed = Signal()
+
+    def __init__(self, operation):
+        titles = {"kem": "封装输入 m（32 字节）", "hybrid": "输入消息（加解密明文）",
+                  "sign": "输入消息（待签名消息）", "hybrid_sign": "输入消息（待混合签名消息）"}
+        super().__init__(titles[operation])
+        self.is_kem = operation == "kem"
+        layout = QVBoxLayout(self)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("输入编码" if self.is_kem else "消息编码"))
+        self.encoding_combo = QComboBox()
+        self.encoding_combo.addItems(["UTF-8", "HEX", "Base64"])
+        self.encoding_combo.setCurrentText("HEX" if self.is_kem else "UTF-8")
+        row.addWidget(self.encoding_combo)
+        self.info = QLabel()
+        row.addWidget(self.info, 1)
+        if self.is_kem:
+            self.btn_random = QPushButton("随机生成 32 字节")
+            self.btn_random.clicked.connect(self._random_input)
+            row.addWidget(self.btn_random)
+        self.btn_file = QPushButton("导入消息文件…" if not self.is_kem else "导入输入文件…")
+        self.btn_file.clicked.connect(self._pick_file)
+        row.addWidget(self.btn_file)
+        layout.addLayout(row)
+        self.edit = QPlainTextEdit(os.urandom(32).hex() if self.is_kem else "你好，后量子密码！")
+        self.edit.setMinimumHeight(50)
+        self.edit.setPlaceholderText("输入 32 字节封装输入 m，可使用上方按钮随机生成" if self.is_kem
+                                     else "输入消息；支持 UTF-8 / HEX / Base64 或文件导入")
+        layout.addWidget(self.edit)
+        self.edit.textChanged.connect(self._edited)
+        self.encoding_combo.currentTextChanged.connect(self._edited)
+        self.refresh_info()
+
+    def message_bytes(self):
+        text = self.edit.toPlainText()
+        encoding = self.encoding_combo.currentText()
+        try:
+            if encoding == "HEX":
+                data = bytes.fromhex(text)
+            elif encoding == "Base64":
+                data = base64.b64decode("".join(text.split()), validate=True)
+            else:
+                data = text.encode("utf-8")
+        except ValueError as exc:
+            raise ValueError("%s 编码无效，请检查输入内容。" % encoding) from exc
+        if self.is_kem and len(data) != 32:
+            raise ValueError("封装输入 m 必须为 32 字节，当前为 %d 字节。" % len(data))
+        return data
+
+    def refresh_info(self):
+        try:
+            data = self.message_bytes()
+            self.info.setText("字节数：%d / %d | HEX 预览：%s" % (
+                len(data), 32 if self.is_kem else 4096, data[:8].hex()))
+        except ValueError as exc:
+            self.info.setText(str(exc))
+
+    def _edited(self):
+        self.refresh_info()
+        self.changed.emit()
+
+    def _random_input(self):
+        self.encoding_combo.setCurrentText("HEX")
+        self.edit.setPlainText(os.urandom(32).hex())
+
+    def _pick_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "选择输入文件", "", "所有文件 (*)")
+        if path:
+            self.load_file(path)
+
+    def load_file(self, path):
+        try:
+            with open(path, "rb") as handle:
+                data = handle.read(4097)
+            if self.is_kem and len(data) != 32:
+                raise ValueError("封装输入文件必须为 32 字节。")
+            if len(data) > 4096:
+                raise ValueError("消息文件超过 4096 字节，请选择更小的文件。")
+        except (OSError, ValueError) as exc:
+            self.info.setText("导入失败：%s" % exc)
+            return
+        self.encoding_combo.setCurrentText("HEX")
+        self.edit.setPlainText(data.hex())
+
+
 class _DemoWorker(QThread):
     done = Signal(dict)
     failed = Signal(str)
 
-    def __init__(self, operation, message, algorithm="", classical_algorithm="X25519", parent=None):
+    def __init__(self, operation, message, algorithm="", classical_algorithm="X25519", parent=None,
+                 message_encoding="UTF-8"):
         super().__init__(parent)
         self.operation = operation
         self.message = message
         self.algorithm = algorithm
         self.classical_algorithm = classical_algorithm
+        self.message_encoding = message_encoding
 
     def run(self):
         try:
             if self.operation == "kem":
-                result = pqc_demo.run_kem_demo(self.algorithm)
+                result = pqc_demo.run_kem_demo(self.algorithm, self.message)
             elif self.operation == "hybrid":
                 result = pqc_demo.run_hybrid_demo(
                     self.message, self.algorithm, self.classical_algorithm)
@@ -55,6 +223,7 @@ class _DemoWorker(QThread):
         except Exception as exc:
             self.failed.emit("%s: %s" % (type(exc).__name__, exc))
         else:
+            result["input_encoding"] = self.message_encoding
             self.done.emit(result)
 
 
@@ -88,26 +257,12 @@ class PqcDemoTab(QWidget):
         root.addWidget(capture_box)
         capture_box.setVisible(capture_provider is not None)
 
-        self.main_splitter = QSplitter(Qt.Orientation.Vertical)
-        root.addWidget(self.main_splitter, 1)
-
-        message_box = QGroupBox("输入消息（UTF-8；供混合密钥交换后的加解密与数字签名使用）")
-        self.message_box = message_box
-        mv = QVBoxLayout(message_box)
-        self.message_edit = QPlainTextEdit("你好，后量子密码！")
-        self.message_edit.setMinimumHeight(50)
-        mv.addWidget(self.message_edit)
-        self.main_splitter.addWidget(message_box)
-
         self.pages = QTabWidget()
-        self.main_splitter.addWidget(self.pages)
-        self.main_splitter.setStretchFactor(0, 1)
-        self.main_splitter.setStretchFactor(1, 4)
-        self.main_splitter.setSizes([110, 500])
+        root.addWidget(self.pages, 1)
 
         standalone = QWidget()
         kv = QVBoxLayout(standalone)
-        kem_hint = QLabel("无需输入消息。接收方生成密钥，发送方封装，接收方解封装；运行后可展开随机采样、矩阵、NTT、压缩编码和隐式拒绝的实际计算。")
+        kem_hint = QLabel("输入或随机生成 32 字节封装输入 m，接收方生成密钥，发送方封装，接收方解封装；可展开实际计算过程。")
         kem_hint.setWordWrap(True)
         kv.addWidget(kem_hint)
         kem_controls = QHBoxLayout()
@@ -134,13 +289,6 @@ class PqcDemoTab(QWidget):
         self.kem_result_tabs.addTab(self.kem_trace_view, "参数与计算过程")
         kr.addWidget(self.kem_result_tabs, 1)
         kv.addWidget(kem_result, 1)
-        self.kem_raw_checkbox = QCheckBox("显示公钥与封装密文（Base64）")
-        kv.addWidget(self.kem_raw_checkbox)
-        self.kem_raw_output = QPlainTextEdit()
-        self.kem_raw_output.setReadOnly(True)
-        self.kem_raw_output.setVisible(False)
-        self.kem_raw_checkbox.toggled.connect(self.kem_raw_output.setVisible)
-        kv.addWidget(self.kem_raw_output, 1)
         self.pages.addTab(standalone, "① ML-KEM 密钥封装")
 
         hybrid = QWidget()
@@ -177,13 +325,6 @@ class PqcDemoTab(QWidget):
         self.hybrid_result_tabs.addTab(self.hybrid_trace_view, "参数与计算过程")
         hr.addWidget(self.hybrid_result_tabs, 1)
         hv.addWidget(hybrid_result, 1)
-        self.hybrid_raw_checkbox = QCheckBox("显示原始数据（Base64）")
-        hv.addWidget(self.hybrid_raw_checkbox)
-        self.hybrid_raw_output = QPlainTextEdit()
-        self.hybrid_raw_output.setReadOnly(True)
-        self.hybrid_raw_output.setVisible(False)
-        self.hybrid_raw_checkbox.toggled.connect(self.hybrid_raw_output.setVisible)
-        hv.addWidget(self.hybrid_raw_output, 1)
         self.pages.addTab(hybrid, "② 混合密钥交换")
 
         signing = QWidget()
@@ -216,13 +357,6 @@ class PqcDemoTab(QWidget):
         self.signature_result_tabs.addTab(self.signature_trace_view, "参数与计算过程")
         sr.addWidget(self.signature_result_tabs, 1)
         sv.addWidget(signature_result, 1)
-        self.signature_raw_checkbox = QCheckBox("显示原始数据（Base64）")
-        sv.addWidget(self.signature_raw_checkbox)
-        self.signature_raw_output = QPlainTextEdit()
-        self.signature_raw_output.setReadOnly(True)
-        self.signature_raw_output.setVisible(False)
-        self.signature_raw_checkbox.toggled.connect(self.signature_raw_output.setVisible)
-        sv.addWidget(self.signature_raw_output, 1)
         self.pages.addTab(signing, "③ 后量子数字签名")
 
         hybrid_signing = QWidget()
@@ -259,14 +393,45 @@ class PqcDemoTab(QWidget):
         self.hybrid_signature_result_tabs.addTab(self.hybrid_signature_trace_view, "参数与计算过程")
         hsr.addWidget(self.hybrid_signature_result_tabs, 1)
         hsv.addWidget(hybrid_signature_result, 1)
-        self.hybrid_signature_raw_checkbox = QCheckBox("显示原始数据（Base64）")
-        hsv.addWidget(self.hybrid_signature_raw_checkbox)
-        self.hybrid_signature_raw_output = QPlainTextEdit()
-        self.hybrid_signature_raw_output.setReadOnly(True)
-        self.hybrid_signature_raw_output.setVisible(False)
-        self.hybrid_signature_raw_checkbox.toggled.connect(self.hybrid_signature_raw_output.setVisible)
-        hsv.addWidget(self.hybrid_signature_raw_output, 1)
         self.pages.addTab(hybrid_signing, "④ 后量子混合签名")
+
+        self.material_views = {}
+        self.message_inputs = {}
+        self._form_splitters = []
+        for index, (operation, button) in enumerate((
+                ("kem", self.btn_kem), ("hybrid", self.btn_hybrid),
+                ("sign", self.btn_sign), ("hybrid_sign", self.btn_hybrid_sign))):
+            view = _DemoMaterialsView()
+            self.material_views[operation] = view
+            result_tabs = self._calculation_widgets(operation)[1]
+            result_tabs.addTab(view, "输出数据")
+            result_tabs.setCurrentWidget(view)
+            page_layout = self.pages.widget(index).layout()
+            result_box = page_layout.takeAt(page_layout.count() - 1).widget()
+            result_box.setTitle("输出与验证结果")
+            actions = QHBoxLayout()
+            actions.addWidget(button)
+            actions.addStretch(1)
+            result_box.layout().insertLayout(0, actions)
+            splitter = QSplitter(Qt.Orientation.Vertical)
+            splitter.addWidget(view.keys_box)
+            message_box = _DemoMessageBox(operation)
+            self.message_inputs[operation] = message_box
+            message_box.changed.connect(lambda op=operation: self._message_changed(op))
+            splitter.addWidget(message_box)
+            splitter.addWidget(result_box)
+            splitter.setStretchFactor(2, 1)
+            splitter.setSizes([190, 130, 350])
+            page_layout.addWidget(splitter, 1)
+            self._form_splitters.append(splitter)
+        self._parameter_combos = (
+            self.standalone_kem_combo, self.kem_combo, self.classical_combo,
+            self.signature_combo, self.hybrid_classical_signature_combo,
+            self.hybrid_pq_signature_combo)
+        for combo, operation in zip(self._parameter_combos,
+                                    ("kem", "hybrid", "hybrid", "sign", "hybrid_sign", "hybrid_sign")):
+            combo.currentTextChanged.connect(
+                lambda _text, op=operation: self._clear_result(op, "参数已修改，请重新运行"))
 
         if include_replay:
             self._add_replay_page()
@@ -481,13 +646,41 @@ class PqcDemoTab(QWidget):
             "协商套件：%s" % (transport.get("cipher_suite") or "—"),
             "证书主体：%s" % (cert.get("subject_cn") or "—"),
         ]))
-        self.message_edit.setPlainText(summary)
+        if demo_kind == "hybrid":
+            self.message_encoding.setCurrentText("UTF-8")
+            self.message_edit.setPlainText(summary)
         self._captured_brief = "来源：%s · %s" % (report.get("host", "检测目标"), demo_name)
         self.capture_status.setText("已导入 %s，可运行对应演示。" % self._captured_brief)
         return True
 
     def _sync_message_visibility(self, index):
-        self.message_box.setVisible(index in (1, 2, 3))
+        if 0 <= index < len(self._form_splitters):
+            self.main_splitter = self._form_splitters[index]
+            operation = ("kem", "hybrid", "sign", "hybrid_sign")[index]
+            self.message_box = self.message_inputs[operation]
+            self.message_edit = self.message_box.edit
+            self.message_encoding = self.message_box.encoding_combo
+            self.message_info = self.message_box.info
+            self.btn_message_file = self.message_box.btn_file
+
+    def _message_changed(self, operation):
+        self._clear_result(operation, "输入已修改，请重新运行")
+
+    def load_message_file(self, path):
+        self.message_box.load_file(path)
+
+    def _output_widget(self, operation):
+        return {"kem": self.kem_output, "hybrid": self.hybrid_output,
+                "sign": self.signature_output,
+                "hybrid_sign": self.hybrid_signature_output}[operation]
+
+    def _clear_result(self, operation, reason="等待运行"):
+        self._output_widget(operation).clear()
+        view, tabs = self._calculation_widgets(operation)
+        view.clear()
+        tabs.setCurrentWidget(self.material_views[operation])
+        self.material_views[operation].clear()
+        self._set_status(operation, reason, None)
 
     def _calculation_widgets(self, operation):
         return {"kem": (self.kem_trace_view, self.kem_result_tabs),
@@ -499,19 +692,18 @@ class PqcDemoTab(QWidget):
     def _start(self, operation):
         if self._worker is not None and self._worker.isRunning():
             return
-        message = self.message_edit.toPlainText().encode("utf-8")
-        outputs = {"kem": self.kem_output, "hybrid": self.hybrid_output,
-                   "sign": self.signature_output,
-                   "hybrid_sign": self.hybrid_signature_output}
-        output = outputs[operation]
-        view, tabs = self._calculation_widgets(operation)
-        view.clear()
-        tabs.setCurrentIndex(0)
-        {"kem": self.kem_raw_output, "hybrid": self.hybrid_raw_output,
-         "sign": self.signature_raw_output,
-         "hybrid_sign": self.hybrid_signature_raw_output}[operation].clear()
+        self._clear_result(operation)
+        output = self._output_widget(operation)
+        try:
+            message = self.message_inputs[operation].message_bytes()
+        except ValueError as exc:
+            output.setPlainText(str(exc))
+            self._calculation_widgets(operation)[1].setCurrentIndex(0)
+            self._set_status(operation, "输入错误", False)
+            return
         if operation != "kem" and len(message) > 4096:
-            output.setPlainText("输入消息超过 4096 字节（UTF-8）；请缩短后重试。")
+            output.setPlainText("输入消息解码后超过 4096 字节；请缩短后重试。")
+            self._calculation_widgets(operation)[1].setCurrentIndex(0)
             self._set_status(operation, "输入过长", False)
             return
         algorithm = {"kem": self.standalone_kem_combo.currentText(),
@@ -524,10 +716,12 @@ class PqcDemoTab(QWidget):
         self.btn_hybrid.setEnabled(False)
         self.btn_sign.setEnabled(False)
         self.btn_hybrid_sign.setEnabled(False)
+        self._set_inputs_enabled(False)
         classical_algorithm = (self.hybrid_classical_signature_combo.currentText()
                                if operation == "hybrid_sign" else self.classical_combo.currentText())
         worker = _DemoWorker(operation, message, algorithm,
-                             classical_algorithm, self)
+                             classical_algorithm, self,
+                             message_encoding=self.message_inputs[operation].encoding_combo.currentText())
         self._worker = worker
         worker.done.connect(lambda data: self._show_result(operation, data))
         worker.failed.connect(lambda error: self._show_failure(operation, error))
@@ -544,9 +738,8 @@ class PqcDemoTab(QWidget):
         label.setStyleSheet("QLabel { color: %s; background: %s; padding: 8px 12px; border-radius: 6px; font-weight: 600; }" % (color, background))
 
     def _show_failure(self, operation, error):
-        {"kem": self.kem_output, "hybrid": self.hybrid_output,
-         "sign": self.signature_output,
-         "hybrid_sign": self.hybrid_signature_output}[operation].setPlainText("运行失败：" + error)
+        self._output_widget(operation).setPlainText("运行失败：" + error)
+        self._calculation_widgets(operation)[1].setCurrentIndex(0)
         self._set_status(operation, "运行失败", False)
 
     @staticmethod
@@ -565,11 +758,17 @@ class PqcDemoTab(QWidget):
                 blocks.append('<p style="margin-left:16px;margin-top:3px;">%s</p>' % safe)
         output.setHtml("<html><body style='font-family:sans-serif;color:#1f2937;'>%s</body></html>" % "".join(blocks))
 
+    def _set_inputs_enabled(self, enabled):
+        for widget in (*self.message_inputs.values(), *self._parameter_combos):
+            widget.setEnabled(enabled)
+        self.btn_import_capture.setEnabled(enabled and self._capture_provider is not None)
+
     def _finished(self):
         self.btn_kem.setEnabled(True)
         self.btn_hybrid.setEnabled(True)
         self.btn_sign.setEnabled(True)
         self.btn_hybrid_sign.setEnabled(True)
+        self._set_inputs_enabled(True)
         if self._worker is not None:
             self._worker.deleteLater()
             self._worker = None
@@ -577,7 +776,9 @@ class PqcDemoTab(QWidget):
     def _show_result(self, operation, data):
         view, tabs = self._calculation_widgets(operation)
         view.set_trace(data["calculation_trace"])
-        tabs.setCurrentIndex(1)
+        materials = self.material_views[operation]
+        materials.set_materials(data["materials"], data.get("input_encoding", ""))
+        tabs.setCurrentWidget(materials)
         if operation == "kem":
             success = (data["shared_secret_matches"] and
                        data["changed_ciphertext_changes_secret"])
@@ -586,7 +787,7 @@ class PqcDemoTab(QWidget):
                 "算法：%s（纯后量子密钥封装）" % data["algorithm"],
                 self._captured_brief,
                 "① 接收方生成密钥对",
-                "   公钥：%d 字节；私钥仅用于本次解封装" % data["public_key_bytes"],
+                "   公钥：%d 字节；完整公私钥见上方临时密钥区" % data["public_key_bytes"],
                 "② 发送方用公钥封装",
                 "   封装密文：%d 字节；共享秘密：%d 字节" % (
                     data["ciphertext_bytes"], data["shared_secret_bytes"]),
@@ -599,10 +800,6 @@ class PqcDemoTab(QWidget):
                     "是" if data["changed_ciphertext_changes_secret"] else "否"),
                 "   说明：ML-KEM 的隐式拒绝会产生另一份秘密，不表示抛出认证错误。",
             ])
-            self.kem_raw_output.setPlainText("\n".join([
-                "公钥（Base64）：", data["public_key_base64"],
-                "封装密文（Base64）：", data["ciphertext_base64"],
-            ]))
         elif operation == "hybrid":
             success = (data["ecdh_shared_secret_matches"] and
                        data["kem_shared_secret_matches"] and data["tamper_rejected"])
@@ -619,18 +816,11 @@ class PqcDemoTab(QWidget):
                 "双方 ECDHE 秘密一致：%s" % ("是" if data["ecdh_shared_secret_matches"] else "否"),
                 "双方 KEM 秘密一致：%s" % ("是" if data["kem_shared_secret_matches"] else "否"),
                 "② HKDF 派生密钥，AES-GCM 加密后解密",
-                "解密结果：%s" % data["recovered"].decode("utf-8"),
+                "解密结果：%s" % self._display_message(data["recovered"]),
                 "③ 修改密文并验证认证标签",
                 "篡改检测：%s" % ("已拒绝" if data["tamper_rejected"] else "未拒绝"),
             ]
             self._render_report(self.hybrid_output, lines)
-            self.hybrid_raw_output.setPlainText("\n".join([
-                "经典发送方公钥（Base64）：", data["sender_public_key_base64"],
-                "ML-KEM 接收方公钥（Base64）：", data["kem_public_key_base64"],
-                "AES-GCM 密文（Base64，含认证标签）：", data["ciphertext_base64"],
-                "ML-KEM 封装密文（Base64）：", data["kem_ciphertext_base64"],
-                "Nonce（Base64）：", data["nonce_base64"],
-            ]))
         elif operation == "hybrid_sign":
             checks = data["checks"]
             original = checks["original"]
@@ -664,13 +854,6 @@ class PqcDemoTab(QWidget):
                     "通过" if check["classical_verified"] else "失败",
                     "通过" if check["pq_verified"] else "失败"))
             self._render_report(self.hybrid_signature_output, lines)
-            self.hybrid_signature_raw_output.setPlainText("\n".join([
-                "传统公钥（Base64；%s）：" % data["classical_public_key_encoding"],
-                data["classical_public_key_base64"],
-                "后量子公钥（Base64）：", data["pq_public_key_base64"],
-                "传统签名（Base64）：", data["classical_signature_base64"],
-                "后量子签名（Base64）：", data["pq_signature_base64"],
-            ]))
         else:
             success = data["verified"] and not data["altered_verified"]
             self._set_status(operation, "验证通过 · 原消息有效，改动消息已拒绝" if success else "验证未通过", success)
@@ -686,10 +869,13 @@ class PqcDemoTab(QWidget):
                 "改动消息验签：%s" % ("异常通过" if data["altered_verified"] else "已拒绝"),
             ]
             self._render_report(self.signature_output, lines)
-            self.signature_raw_output.setPlainText("\n".join([
-                "公钥（Base64）：", data["public_key_base64"],
-                "签名（Base64）：", data["signature_base64"],
-            ]))
+
+    @staticmethod
+    def _display_message(message):
+        try:
+            return message.decode("utf-8")
+        except UnicodeDecodeError:
+            return "HEX：" + message.hex()
 
 
 class PqcCompareTab(QWidget):
