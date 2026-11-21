@@ -228,6 +228,7 @@ powershell -File pqc_lab/trust-root.ps1 -Action remove
 | 检测结果只显示快速证据 | 检查握手明细及依赖错误；本实验验收要求深度验签结果，快速识别不能替代它。 |
 | 页面显示旧时间 | 对运行中的服务重新执行 `verify`，再刷新页面并核对证据时间。 |
 | 初始化提示身份文件不完整 | 检查 `.runtime/private/` 和公开证书是否配套，恢复原文件或在独立实验副本重新初始化；不要混用不同次生成的 CA 和服务器密钥。 |
+| 启动报 `certificate has expired` | 叶子证书有效期 30 天（根证书 365 天），到期不会自动换新。脚本会明确报出过期角色与到期时间；按新的独立实验身份处理：删除整套过期身份（`.runtime/private/` 内对应私钥与 `public/` 内对应证书）后重新启动，或改用新的 `--base` 目录。 |
 
 排查依据：[实验脚本（2026/10）](lab.py)、[PQC 检测实现（2026/10），深度与快速模式](../modules/pqc_detect.py)、[集成测试（2026/10），身份完整性检查](../tests/test_pqc_lab.py)、[OpenSSL s_server（2026/10，查阅），`-WWW`](https://docs.openssl.org/3.5/man1/openssl-s_server/)。
 

@@ -159,6 +159,16 @@ def init_lab(base, openssl, *, profile=None):
     if os.name != "nt":
         root_key.chmod(0o600)
         leaf_key.chmod(0o600)
+    # Report expired identities clearly instead of dumping the chain-verify error.
+    for role, cert in (("root CA", root_cert), ("server", leaf_cert)):
+        probe = run([openssl, "x509", "-in", cert, "-checkend", "0", "-noout"])
+        if probe.returncode and "will expire" in output(probe):
+            enddate = output(run([openssl, "x509", "-in", cert, "-enddate", "-noout"])).strip()
+            raise RuntimeError(
+                f"The {role} certificate has expired ({enddate}; {cert}). This lab never "
+                "auto-renews an identity: delete this profile's expired identity files "
+                "(keys in .runtime/private and certificates in public), or start a fresh "
+                "experiment with a new --base directory. 身份证书已过期，请按新的独立实验身份重新初始化。")
     require(chain_command(base, openssl, profile=profile))
     expected_oid = TLS_SIGNATURES[profile.signature]["oid"]
     for cert_file in (root_cert, leaf_cert):

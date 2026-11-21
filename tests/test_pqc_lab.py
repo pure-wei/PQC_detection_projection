@@ -1,6 +1,7 @@
 """Integration tests use a real OpenSSL server, keys, signatures and HTTP traffic."""
 import importlib.util
 import json
+import secrets
 import socket
 import subprocess
 import sys
@@ -80,6 +81,24 @@ def test_incomplete_identity_is_not_silently_reissued(tmp_path):
     (private / "root.key.pem").write_text("incomplete existing identity")
     with pytest.raises(RuntimeError, match="incomplete|不完整"):
         lab.init_lab(tmp_path, "unused-openssl")
+
+
+def test_expired_identity_is_reported_with_renewal_guidance(tmp_path, pqc_openssl):
+    lab = load_lab()
+    openssl = pqc_openssl
+    lab.init_lab(tmp_path, openssl)
+    root_key, leaf_key, root_cert, leaf_cert = lab.identity_paths(tmp_path, lab.LabProfile())
+    private = tmp_path / ".runtime" / "private"
+    csr = private / "server.csr.pem"
+    # Re-issue the leaf with a past notAfter so the whole identity is complete but expired.
+    lab.require([openssl, "req", "-new", "-key", leaf_key, "-out", csr,
+                 "-subj", "/CN=localhost", "-config", private / "pqc.cnf"])
+    lab.require([openssl, "x509", "-req", "-in", csr, "-CA", root_cert, "-CAkey", root_key,
+                 "-set_serial", "0x" + secrets.token_hex(16), "-out", leaf_cert,
+                 "-not_before", "20191201000000Z", "-not_after", "20200101000000Z",
+                 "-extfile", private / "pqc.cnf", "-extensions", "server_cert"])
+    with pytest.raises(RuntimeError, match="expired|过期"):
+        lab.init_lab(tmp_path, openssl)
 
 
 def test_service_lifecycle_keeps_private_files_outside_web_root(tmp_path, pqc_openssl):
